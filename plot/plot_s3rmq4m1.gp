@@ -4,7 +4,7 @@ dt3 = "lc '#3d9435' lw 2.5"
 dt4 = "lc '#cb360d' lw 2.5"
 dt5 = "lc '#e1aa13' lw 2.5"
 dt6  = "lc '#138bae' lw 2.5"
-dt7  = "dt (5,5)"
+dt7  = "lc '#a5a5a5' lw 2.5"
 dt8  = "dt (10,10)"
 dt9  = "dt (20,10)"
 
