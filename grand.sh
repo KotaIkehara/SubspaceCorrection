@@ -9,11 +9,3 @@
 #------- Program execution -------#
 #export OMP_NUM_THREADS=40
 ./a.out mtx/thermal1.mtx 1
-./a.out mtx/thermal1.mtx 2
-./a.out mtx/thermal1.mtx 3
-./a.out mtx/thermal1.mtx 4
-./a.out mtx/thermal1.mtx 5
-./a.out mtx/thermal1.mtx 6
-./a.out mtx/thermal1.mtx 7
-./a.out mtx/thermal1.mtx 8
-./a.out mtx/thermal1.mtx 9
