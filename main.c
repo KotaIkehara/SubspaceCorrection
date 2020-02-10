@@ -77,7 +77,8 @@ int main(int argc, char *argv[]) {
   // read file
   i = 0;
   while (fgets(tmp, sizeof(tmp), fp)) {
-    if (tmp[0] == '%') { /*ignore commments*/
+    if (tmp[0] == '%') {
+      /*ignore commments*/
     } else {
       if (i == 0) {
         sscanf(tmp, "%d %d %d", &n, &n, &j);
@@ -132,16 +133,14 @@ int main(int argc, char *argv[]) {
   free(D);
   // end diagonal scaling
 
-  // make b
+  // b: right hand vector
   double *b;
   b = (double *)malloc(sizeof(double) * n);
-  // D^(-1)b
   for (i = 0; i < n; i++) {
     b[i] = 1.0;
   }
-  // end make b
 
-  // iccg
+  // ICCG
   int nitecg = 5000;
   double *solx;
   solx = (double *)malloc(sizeof(double) * n);
@@ -177,7 +176,7 @@ int main(int argc, char *argv[]) {
   double *Bu;
   Bu = (double *)malloc(sizeof(double) * n);
   lapack_int info;
-  char sfile[256];
+  // char sfile[256];
   int m_max = m;
 
   double *B;
@@ -193,9 +192,9 @@ int main(int argc, char *argv[]) {
 
   for (zite = 0; zite < 2; zite++) {
     t0 = get_time();
-    sprintf(sfile, "thermal1_ignore_zite=%d_th=%d.dat", zite, -threshold);
-    fp = fopen(sfile, "w");
-    fprintf(fp, "#ite residual of %s\n", argv[1]);
+    // sprintf(sfile, "thermal1_ignore_zite=%d_th=%d.dat", zite, -threshold);
+    // fp = fopen(sfile, "w");
+    // fprintf(fp, "#ite residual of %s\n", argv[1]);
 
     ganma = 1.0;
     for (i = 0; i < n; i++) {
@@ -335,15 +334,15 @@ int main(int argc, char *argv[]) {
 
       // begin SC
       if (zite > 0) {
-        // SC Step1. Compute f = B^T * r
+        // Step1. Compute f = B^T * r
         cblas_dgemm(CblasColMajor, CblasTrans, CblasNoTrans, m_max, 1, n, 1.0,
                     B, n, r, n, 0.0, f, m_max);
-        // SC Step2. Solve (B^TAB)u = f
+        // Step2. Solve (B^TAB)u = f
         // forward/backward substitution
         LAPACKE_dgetrs(LAPACK_COL_MAJOR, 'N', m_max, 1, bab, m_max, pivot, f,
                        m_max);
 
-        // SC Step3. Compute Zc = Z + Bu
+        // Step3. Compute Zc = Z + Bu
         /***Compute Bu ***/
         cblas_dgemm(CblasColMajor, CblasNoTrans, CblasNoTrans, n, 1, m_max, 1.0,
                     B, n, f, m_max, 0.0, Bu, n);
@@ -406,7 +405,7 @@ int main(int argc, char *argv[]) {
 
       // printf("ite:%d, %lf\n", ite, sqrt(rnorm / bnorm)); //収束判定
 
-      fprintf(fp, "%d %lf\n", ite, sqrt(rnorm / bnorm));
+      // fprintf(fp, "%d %lf\n", ite, sqrt(rnorm / bnorm));
 
       if (sqrt(rnorm / bnorm) < err) {
         t1 = get_time();
@@ -414,7 +413,7 @@ int main(int argc, char *argv[]) {
         break;
       }
 
-      /*--- algorithm1 (Selection of Approximate Solution Vectors)---*/
+      /*--- Selection of Approximate Solution Vectors ---*/
       if (ite % h == 0) {
         it = 0;
         for (l = 0; l < lmax; l++) {
@@ -428,9 +427,9 @@ int main(int argc, char *argv[]) {
           h = h * 2;
         }
       }
-      /*--- end algorithm1---*/
+      /*--- end Selection of Approximate Solution Vectors ---*/
 
-    }  // end iccg
+    }  // end ICCG
 
     // e = x - x~
     for (i = 0; i < m; i++) {
@@ -438,13 +437,13 @@ int main(int argc, char *argv[]) {
         _solx[(i * n) + j] = solx[j] - _solx[(i * n) + j];
       }
     }
+
     /*--- Modified Gram-Schmidt orthogonalization ---*/
     double *enorm, *er, *eq;
     enorm = (double *)malloc(sizeof(double) * m);
     er = (double *)malloc(sizeof(double) * (m * m));
     eq = (double *)malloc(sizeof(double) * (m * n));
 
-    // initialize enorm,er
     for (i = 0; i < m; i++) {
       enorm[i] = 0;
     }
@@ -505,12 +504,11 @@ int main(int argc, char *argv[]) {
                 ae, n, 0.0, X, m);
 
     // E^T*ae
-    // copy X to X2
     for (i = 0; i < m * m; i++) {
       X2[i] = X[i];
     }
 
-    // computing eigenvalues and eigenvectors of X
+    // compute eigenvalues and eigenvectors of X
     info = LAPACKE_dsyev(LAPACK_COL_MAJOR, 'V', 'U', m, X, m, W);
     if (info != 0) {
       printf("info = %d\n", info);  // error check
@@ -574,7 +572,7 @@ int main(int argc, char *argv[]) {
       free(X2);
       free(Y);
     }
-    fclose(fp);
+    // fclose(fp);
   }
   free(B);
   free(f);

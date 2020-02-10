@@ -1,20 +1,18 @@
+#include <math.h>
+#include <mkl.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
-#include <math.h>
-#include <time.h>
 #include <sys/time.h>
-#include <mkl.h>
+#include <time.h>
 
-double get_time()
-{
+double get_time() {
   struct timeval tv;
   gettimeofday(&tv, NULL);
   return tv.tv_sec + (double)tv.tv_usec * 1e-6;
 }
 
-int main(int argc, char *argv[])
-{
+int main(int argc, char *argv[]) {
   FILE *fp;
   int *row_ptr, *fill, *col_ind;
   double *val, a;
@@ -24,46 +22,34 @@ int main(int argc, char *argv[])
   int n, nnonzero;
   int row, col;
   double *D;
-  if (argc != 3)
-  {
+  if (argc != 3) {
     printf("Usage: sample <input_filename> <threshold(1~9)>\n");
     exit(1);
   }
-  if ((fp = fopen(argv[1], "r")) == NULL)
-  {
+  if ((fp = fopen(argv[1], "r")) == NULL) {
     printf("file open error!\n");
     exit(1);
   }
 
   nnonzero = 0;
-  //read file
-  while (fgets(tmp, sizeof(tmp), fp))
-  {
-    if (tmp[0] == '%')
-    { /*ignore commments*/
-    }
-    else
-    {
-      if (nnonzero == 0)
-      {
+  // read file
+  while (fgets(tmp, sizeof(tmp), fp)) {
+    if (tmp[0] == '%') {
+      /*ignore commments*/
+    } else {
+      if (nnonzero == 0) {
         sscanf(tmp, "%d %d %d", &n, &n, &nnonzero);
         nnonzero_row = (int *)malloc(sizeof(int) * n);
-        for (j = 0; j < n; j++)
-        {
+        for (j = 0; j < n; j++) {
           nnonzero_row[j] = 0;
         }
         nnonzero++;
-      }
-      else
-      {
+      } else {
         sscanf(tmp, "%d %d %lf", &row, &col, &a);
-        if (row == col)
-        {
+        if (row == col) {
           nnonzero_row[row - 1]++;
           nnonzero++;
-        }
-        else
-        {
+        } else {
           nnonzero_row[row - 1]++;
           nnonzero_row[col - 1]++;
           nnonzero += 2;
@@ -75,60 +61,48 @@ int main(int argc, char *argv[])
 
   row_ptr = (int *)malloc(sizeof(int) * (n + 1));
   row_ptr[0] = 0;
-  for (i = 1; i < n + 1; i++)
-  {
+  for (i = 1; i < n + 1; i++) {
     row_ptr[i] = row_ptr[i - 1] + nnonzero_row[i - 1];
   }
 
   free(nnonzero_row);
   fclose(fp);
 
-  //next scan
-  if ((fp = fopen(argv[1], "r")) == NULL)
-  {
+  // next scan
+  if ((fp = fopen(argv[1], "r")) == NULL) {
     printf("file open error!\n");
     exit(1);
   }
 
-  //read file
+  // read file
   i = 0;
-  while (fgets(tmp, sizeof(tmp), fp))
-  {
-    if (tmp[0] == '%')
-    { /*ignore commments*/
-    }
-    else
-    {
-      if (i == 0)
-      {
+  while (fgets(tmp, sizeof(tmp), fp)) {
+    if (tmp[0] == '%') {
+      /*ignore commments*/
+    } else {
+      if (i == 0) {
         sscanf(tmp, "%d %d %d", &n, &n, &j);
         printf("n:%d nnonzero:%d\n", n, nnonzero);
         val = (double *)malloc(sizeof(double) * nnonzero);
         col_ind = (int *)malloc(sizeof(int) * nnonzero);
         fill = (int *)malloc(sizeof(int) * (n + 1));
         D = (double *)malloc(sizeof(double) * n);
-        for (i = 0; i < n; i++)
-        {
+        for (i = 0; i < n; i++) {
           D[i] = 0.0;
         }
-        for (j = 0; j < nnonzero; j++)
-        {
+        for (j = 0; j < nnonzero; j++) {
           val[j] = 0.0;
           col_ind[j] = 0;
         }
-        for (j = 0; j < n + 1; j++)
-        {
+        for (j = 0; j < n + 1; j++) {
           fill[j] = 0;
         }
         i++;
-      }
-      else
-      {
+      } else {
         sscanf(tmp, "%d %d %lf", &row, &col, &a);
         row--;
         col--;
-        if (row != col)
-        {
+        if (row != col) {
           col_ind[row_ptr[col] + fill[col]] = row;
           val[row_ptr[col] + fill[col]] = a;
           fill[col]++;
@@ -136,44 +110,37 @@ int main(int argc, char *argv[])
           col_ind[row_ptr[row] + fill[row]] = col;
           val[row_ptr[row] + fill[row]] = a;
           fill[row]++;
-        }
-        else
-        {
+        } else {
           col_ind[row_ptr[row] + fill[row]] = col;
           val[row_ptr[row] + fill[row]] = a;
           D[row] = sqrt(a);
           fill[row]++;
         }
-      } //end scan row,col,a
-    }   //tmp[0] != 0
-  }     //end while
+      }  // end scan row,col,a
+    }    // tmp[0] != %
+  }      // end while
 
   free(fill);
   fclose(fp);
 
-  //diagonal scaling
-  //D^(-1) * A * D(-1)
-  for (i = 0; i < n; i++)
-  {
-    for (j = row_ptr[i]; j < row_ptr[i + 1]; j++)
-    {
+  // diagonal scaling
+  // D^(-1) * A * D(-1)
+  for (i = 0; i < n; i++) {
+    for (j = row_ptr[i]; j < row_ptr[i + 1]; j++) {
       val[j] = val[j] / (D[i] * D[col_ind[j]]);
     }
   }
   free(D);
-  //end diagonal scaling
+  // end diagonal scaling
 
-  //make b
+  // b: right hand vector
   double *b;
   b = (double *)malloc(sizeof(double) * n);
-  //D^(-1)b
-  for (i = 0; i < n; i++)
-  {
+  for (i = 0; i < n; i++) {
     b[i] = 1.0;
   }
-  //end make b
 
-  // iccg
+  // ICCG
   int nitecg = 5000;
   double *solx;
   solx = (double *)malloc(sizeof(double) * n);
@@ -223,21 +190,18 @@ int main(int argc, char *argv[])
 
   int threshold = -atoi(argv[2]);
 
-  for (zite = 0; zite < 2; zite++)
-  {
+  for (zite = 0; zite < 2; zite++) {
     t0 = get_time();
     sprintf(sfile, "thermal1_ignore_zite=%d_th=%d.dat", zite, -threshold);
     fp = fopen(sfile, "w");
     fprintf(fp, "#ite residual of %s\n", argv[1]);
 
     ganma = 1.0;
-    for (i = 0; i < n; i++)
-    {
+    for (i = 0; i < n; i++) {
       diag[i] = 0.0;
       iuhead[i] = 0;
     }
-    for (i = 0; i < nnonzero; i++)
-    {
+    for (i = 0; i < nnonzero; i++) {
       iucol[i] = 0;
       u[i] = 0.0;
     }
@@ -245,29 +209,20 @@ int main(int argc, char *argv[])
     ku = 0;
     iuhead[0] = 1;
 
-    for (i = 0; i < n; i++)
-    {
+    for (i = 0; i < n; i++) {
       ku = 0;
       kl = 0;
-      for (j = row_ptr[i]; j < row_ptr[i + 1]; j++)
-      {
+      for (j = row_ptr[i]; j < row_ptr[i + 1]; j++) {
         jj = col_ind[j];
-        if (jj == i)
-        {
+        if (jj == i) {
           diag[i] = val[j] * ganma;
-        }
-        else if (jj < i)
-        {
+        } else if (jj < i) {
           kl++;
-        }
-        else if (jj > i)
-        {
+        } else if (jj > i) {
           iucol[ku + iuhead[i]] = jj;
           u[ku + iuhead[i]] = val[j];
           ku++;
-        }
-        else
-        {
+        } else {
           printf("error");
           break;
         }
@@ -275,297 +230,247 @@ int main(int argc, char *argv[])
       }
     }
 
-    //Incomplete Cholesky decomposition
-    for (i = 0; i < n; i++)
-    {
-      for (j = iuhead[i]; j < iuhead[i + 1]; j++)
-      {
+    // IC decomposition
+    for (i = 0; i < n; i++) {
+      for (j = iuhead[i]; j < iuhead[i + 1]; j++) {
         jj = iucol[j];
 
         diag[iucol[j]] = diag[iucol[j]] - u[j] * u[j] / diag[i];
 
-        for (jp = j + 1; jp < iuhead[i + 1]; jp++)
-        {
+        for (jp = j + 1; jp < iuhead[i + 1]; jp++) {
           jjp = iucol[jp];
-          for (ji = iuhead[jj]; ji < iuhead[jj + 1]; ji++)
-          {
-            if (iucol[ji] == jjp)
-            {
+          for (ji = iuhead[jj]; ji < iuhead[jj + 1]; ji++) {
+            if (iucol[ji] == jjp) {
               u[ji] = u[ji] - u[j] * u[jp] / diag[i];
-              //exit??
+              // exit??
               break;
             }
           }
         }
       }
-      if (fabs(diag[i]) < 0.001)
-      {
+      if (fabs(diag[i]) < 0.001) {
         break;
       }
     }
-    //end Incomplete Cholesky decomposition
+    // end IC decomposition
 
     bnorm = 0.0;
-    for (i = 0; i < n; i++)
-    {
+    for (i = 0; i < n; i++) {
       bnorm += fabs(b[i]) * fabs(b[i]);
     }
 
     // printf("bnorm = %f , %d\n", bnorm, n);
-    for (i = 0; i < n; i++)
-    {
+    for (i = 0; i < n; i++) {
       solx[i] = 0.0;
       diag[i] = 1.0 / diag[i];
     }
 
-    //calc Residual
-    for (i = 0; i < n; i++)
-    {
+    // calc Residual
+    for (i = 0; i < n; i++) {
       ar0 = 0.0;
-      for (j = row_ptr[i]; j < row_ptr[i + 1]; j++)
-      {
+      for (j = row_ptr[i]; j < row_ptr[i + 1]; j++) {
         jj = col_ind[j];
         ar0 += val[j] * solx[jj];
       }
       r[i] = b[i] - ar0;
     }
-    //end calc residual
+    // end calc residual
 
     lapack_int *pivot;
     pivot = (lapack_int *)calloc(sizeof(lapack_int), m_max);
     cgrop = 0.0;
-    if (zite > 0)
-    {
-      for (i = 0; i < m_max; i++)
-      {
-        for (j = 0; j < n; j++)
-        {
+    if (zite > 0) {
+      for (i = 0; i < m_max; i++) {
+        for (j = 0; j < n; j++) {
           ab[i * n + j] = 0.0;
         }
       }
 
-      for (i = 0; i < m_max; i++)
-      {
-        for (j = 0; j < n; j++)
-        {
-          for (k = row_ptr[j]; k < row_ptr[j + 1]; k++)
-          {
+      for (i = 0; i < m_max; i++) {
+        for (j = 0; j < n; j++) {
+          for (k = row_ptr[j]; k < row_ptr[j + 1]; k++) {
             ab[i * n + j] += val[k] * B[i * n + col_ind[k]];
           }
         }
       }
 
-      cblas_dgemm(CblasColMajor, CblasTrans, CblasNoTrans, m_max, m_max, n, 1.0, B, n, ab, n, 0.0, bab, m_max);
+      cblas_dgemm(CblasColMajor, CblasTrans, CblasNoTrans, m_max, m_max, n, 1.0,
+                  B, n, ab, n, 0.0, bab, m_max);
 
-      //LU decomposition
+      // LU decomposition
       LAPACKE_dgetrf(LAPACK_COL_MAJOR, m_max, m_max, bab, m_max, pivot);
     }
 
-    for (ite = 1; ite < nitecg; ite++)
-    {
-      for (i = 0; i < n; i++)
-      {
+    for (ite = 1; ite < nitecg; ite++) {
+      for (i = 0; i < n; i++) {
         z[i] = r[i];
       }
-      //Forward substitution
-      for (i = 0; i < n; i++)
-      {
-        for (j = iuhead[i]; j < iuhead[i + 1]; j++)
-        {
+      // Forward substitution
+      for (i = 0; i < n; i++) {
+        for (j = iuhead[i]; j < iuhead[i + 1]; j++) {
           jj = iucol[j];
           z[jj] += -z[i] * u[j] * diag[i];
         }
       }
-      //end Forward substitution
+      // end Forward substitution
 
       z[n - 1] = z[n - 1] * diag[n - 1];
 
-      //backward substitution
-      for (i = n - 2; i >= 0; --i)
-      {
-        for (j = iuhead[i + 1] - 1; j >= iuhead[i]; --j)
-        {
+      // backward substitution
+      for (i = n - 2; i >= 0; --i) {
+        for (j = iuhead[i + 1] - 1; j >= iuhead[i]; --j) {
           jj = iucol[j];
           z[i] += -u[j] * z[jj];
         }
         z[i] *= diag[i];
       }
-      //end backward substitutions
+      // end backward substitutions
 
-      //ignore ic
+      // ignore IC
       // for (i = 0; i < n; i++)
       // {
       //   z[i] = r[i];
       // }
 
-      //begin SC
-      if (zite > 0)
-      {
-        //SC Step1. Compute f = B^T * r
-        cblas_dgemm(CblasColMajor, CblasTrans, CblasNoTrans, m_max, 1, n, 1.0, B, n, r, n, 0.0, f, m_max);
-        //SC Step2. Solve (B^TAB)u = f
-        //forward/backward substitution
-        LAPACKE_dgetrs(LAPACK_COL_MAJOR, 'N', m_max, 1, bab, m_max, pivot, f, m_max);
+      // begin SC
+      if (zite > 0) {
+        // Step1. Compute f = B^T * r
+        cblas_dgemm(CblasColMajor, CblasTrans, CblasNoTrans, m_max, 1, n, 1.0,
+                    B, n, r, n, 0.0, f, m_max);
+        // Step2. Solve (B^TAB)u = f
+        // forward/backward substitution
+        LAPACKE_dgetrs(LAPACK_COL_MAJOR, 'N', m_max, 1, bab, m_max, pivot, f,
+                       m_max);
 
-        //SC Step3. Compute Zc = Z + Bu
+        // Step3. Compute Zc = Z + Bu
         /***Compute Bu ***/
-        cblas_dgemm(CblasColMajor, CblasNoTrans, CblasNoTrans, n, 1, m_max, 1.0, B, n, f, m_max, 0.0, Bu, n);
+        cblas_dgemm(CblasColMajor, CblasNoTrans, CblasNoTrans, n, 1, m_max, 1.0,
+                    B, n, f, m_max, 0.0, Bu, n);
 
-        for (i = 0; i < n; i++)
-        {
+        for (i = 0; i < n; i++) {
           z[i] += Bu[i];
         }
       }
-      //end SC
+      // end SC
 
       cgropp = cgrop;
       cgrop = 0.0;
 
-      for (i = 0; i < n; i++)
-      {
+      for (i = 0; i < n; i++) {
         cgrop += r[i] * z[i];
       }
 
-      if (ite == 1)
-      {
-        for (i = 0; i < n; i++)
-        {
+      if (ite == 1) {
+        for (i = 0; i < n; i++) {
           pn[i] = z[i];
         }
-      }
-      else
-      {
+      } else {
         beta = cgrop / cgropp;
-        for (i = 0; i < n; i++)
-        {
+        for (i = 0; i < n; i++) {
           pn[i] = z[i] + beta * p[i];
         }
       }
 
-      for (i = 0; i < n; i++)
-      {
+      for (i = 0; i < n; i++) {
         q[i] = 0.0;
       }
 
-      for (i = 0; i < n; i++)
-      {
-        for (j = row_ptr[i]; j < row_ptr[i + 1]; j++)
-        {
+      for (i = 0; i < n; i++) {
+        for (j = row_ptr[i]; j < row_ptr[i + 1]; j++) {
           jj = col_ind[j];
           q[i] = q[i] + val[j] * pn[jj];
         }
       }
 
       alphat = 0.0;
-      for (i = 0; i < n; i++)
-      {
+      for (i = 0; i < n; i++) {
         alphat = alphat + pn[i] * q[i];
       }
       alpha = cgrop / alphat;
 
-      for (i = 0; i < n; i++)
-      {
+      for (i = 0; i < n; i++) {
         solx[i] = solx[i] + alpha * pn[i];
         r[i] = r[i] - alpha * q[i];
       }
 
-      for (i = 0; i < n; i++)
-      {
+      for (i = 0; i < n; i++) {
         p[i] = pn[i];
       }
 
       rnorm = 0.0;
 
-      for (i = 0; i < n; i++)
-      {
+      for (i = 0; i < n; i++) {
         rnorm = rnorm + fabs(r[i]) * fabs(r[i]);
       }
 
-      //printf("ite:%d, %lf\n", ite, sqrt(rnorm / bnorm)); //収束判定
+      // printf("ite:%d, %lf\n", ite, sqrt(rnorm / bnorm)); //収束判定
 
       fprintf(fp, "%d %lf\n", ite, sqrt(rnorm / bnorm));
 
-      if (sqrt(rnorm / bnorm) < err)
-      {
+      if (sqrt(rnorm / bnorm) < err) {
         t1 = get_time();
         printf("\n--- time: %lf ---\n\n", t1 - t0);
         break;
       }
 
-      /*--- algorithm1 (Selection of Approximate Solution Vectors)---*/
-      if (ite % h == 0)
-      {
+      /*--- Selection of Approximate Solution Vectors ---*/
+      if (ite % h == 0) {
         it = 0;
-        for (l = 0; l < lmax; l++)
-        {
+        for (l = 0; l < lmax; l++) {
           it = it + pow(-1, l) * floor((ite - 1) / pow(m, l));
         }
         j = it % m;
-        for (i = 0; i < n; i++)
-        {
+        for (i = 0; i < n; i++) {
           _solx[j * n + i] = solx[i];
         }
-        if (ite == h * m)
-        {
+        if (ite == h * m) {
           h = h * 2;
         }
       }
-      /*--- end algorithm1---*/
+      /*--- end Selection of Approximate Solution Vectors ---*/
 
-    } //end iccg
+    }  // end ICCG
 
     // e = x - x~
-    for (i = 0; i < m; i++)
-    {
-      for (j = 0; j < n; j++)
-      {
+    for (i = 0; i < m; i++) {
+      for (j = 0; j < n; j++) {
         _solx[(i * n) + j] = solx[j] - _solx[(i * n) + j];
       }
     }
+
     /*--- Modified Gram-Schmidt orthogonalization ---*/
     double *enorm, *er, *eq;
     enorm = (double *)malloc(sizeof(double) * m);
     er = (double *)malloc(sizeof(double) * (m * m));
     eq = (double *)malloc(sizeof(double) * (m * n));
 
-    // initialize enorm,er
-    for (i = 0; i < m; i++)
-    {
+    for (i = 0; i < m; i++) {
       enorm[i] = 0;
     }
-    for (i = 0; i < m; i++)
-    {
-      for (j = 0; j < m; j++)
-      {
+    for (i = 0; i < m; i++) {
+      for (j = 0; j < m; j++) {
         er[i * m + j] = 0;
       }
     }
 
-    for (i = 0; i < m; i++)
-    {
-      for (j = 0; j < n; j++)
-      {
+    for (i = 0; i < m; i++) {
+      for (j = 0; j < n; j++) {
         enorm[i] += _solx[i * n + j] * _solx[i * n + j];
       }
       enorm[i] = sqrt(enorm[i]);
     }
 
-    for (i = 0; i < m; i++)
-    {
+    for (i = 0; i < m; i++) {
       er[i * m + i] = enorm[i];
-      for (j = 0; j < n; j++)
-      {
+      for (j = 0; j < n; j++) {
         eq[i * n + j] = _solx[i * n + j] / er[i * m + i];
       }
 
-      for (j = i + 1; j < m; j++)
-      {
-        for (k = 0; k < n; k++)
-        {
+      for (j = i + 1; j < m; j++) {
+        for (k = 0; k < n; k++) {
           er[i * m + j] += eq[i * n + k] * _solx[j * n + k];
         }
-        for (k = 0; k < n; k++)
-        {
+        for (k = 0; k < n; k++) {
           _solx[j * n + k] = _solx[j * n + k] - eq[i * n + k] * er[i * m + j];
         }
       }
@@ -580,73 +485,59 @@ int main(int argc, char *argv[])
     X2 = (double *)malloc(sizeof(double) * (m * m));
     Y = (double *)malloc(m * sizeof(double));
 
-    for (i = 0; i < m; i++)
-    {
-      for (j = 0; j < n; j++)
-      {
+    for (i = 0; i < m; i++) {
+      for (j = 0; j < n; j++) {
         ae[i * n + j] = 0;
       }
     }
-    for (i = 0; i < m; i++)
-    {
-      for (k = 0; k < n; k++)
-      {
-        for (j = row_ptr[k]; j < row_ptr[k + 1]; j++)
-        {
+    for (i = 0; i < m; i++) {
+      for (k = 0; k < n; k++) {
+        for (j = row_ptr[k]; j < row_ptr[k + 1]; j++) {
           jj = col_ind[j];
           ae[i * n + k] += val[j] * eq[i * n + jj];
         }
       }
     }
 
-    //X = eq^T * ae
-    cblas_dgemm(CblasColMajor, CblasTrans, CblasNoTrans, m, m, n, 1.0, eq, n, ae, n, 0.0, X, m);
+    // X = eq^T * ae
+    cblas_dgemm(CblasColMajor, CblasTrans, CblasNoTrans, m, m, n, 1.0, eq, n,
+                ae, n, 0.0, X, m);
 
-    //E^T*ae
-    //copy X to X2
-    for (i = 0; i < m * m; i++)
-    {
+    // E^T*ae
+    for (i = 0; i < m * m; i++) {
       X2[i] = X[i];
     }
 
-    // computing eigenvalues and eigenvectors of X
+    // compute eigenvalues and eigenvectors of X
     info = LAPACKE_dsyev(LAPACK_COL_MAJOR, 'V', 'U', m, X, m, W);
-    if (info != 0)
-    {
-      printf("info = %d\n", info); //error check
-    }
-    else
-    {
-      //check the result
+    if (info != 0) {
+      printf("info = %d\n", info);  // error check
+    } else {
+      // check the result
       // printf("-- check the residual of each eigenpair --\n");
-      for (k = 0; k < m; k++)
-      {
-        for (i = 0; i < m; i++)
-        {
+      for (k = 0; k < m; k++) {
+        for (i = 0; i < m; i++) {
           Y[i] = 0.0;
-          for (j = 0; j < m; j++)
-          {
+          for (j = 0; j < m; j++) {
             Y[i] += X2[j * m + i] * X[k * m + j];
           }
         }
         temp = 0.0;
-        for (i = 0; i < m; i++)
-        {
-          temp += (Y[i] - (W[k] * X[k * m + i])) * (Y[i] - (W[k] * X[k * m + i]));
+        for (i = 0; i < m; i++) {
+          temp +=
+              (Y[i] - (W[k] * X[k * m + i])) * (Y[i] - (W[k] * X[k * m + i]));
         }
         temp = sqrt(temp);
 
-        // printf("[%3d] eigenvalue = %8.3e, || Ax - wx ||_2 = %8.3e\n", k + 1, W[k], temp);
+        // printf("[%3d] eigenvalue = %8.3e, || Ax - wx ||_2 = %8.3e\n", k + 1,
+        // W[k], temp);
       }
 
       // printf("-- check the orthogonality of eigenvectors --\n");
-      for (k = 0; k < m; k++)
-      {
-        for (j = k; j < m; j++)
-        {
+      for (k = 0; k < m; k++) {
+        for (j = k; j < m; j++) {
           temp = 0.0;
-          for (i = 0; i < m; i++)
-          {
+          for (i = 0; i < m; i++) {
             temp += X[k * m + i] * X[j * m + i];
           }
           temp;
@@ -658,23 +549,19 @@ int main(int argc, char *argv[])
     double theta = pow(10, threshold);
     printf("theta: %lf\n", theta);
 
-    for (i = 0; i < m; i++)
-    {
-      if (W[i] <= theta)
-      {
+    for (i = 0; i < m; i++) {
+      if (W[i] <= theta) {
         m_max = i + 1;
-      }
-      else
-      {
+      } else {
         break;
       }
     }
     printf("m_max = %d\n", m_max);
     printf("# of ite. = %d, %lf\n", ite, sqrt(rnorm / bnorm));
 
-    if (m_max != 0)
-    {
-      cblas_dgemm(CblasColMajor, CblasNoTrans, CblasNoTrans, n, m_max, m, 1.0, eq, n, X, m, 0.0, B, n);
+    if (m_max != 0) {
+      cblas_dgemm(CblasColMajor, CblasNoTrans, CblasNoTrans, n, m_max, m, 1.0,
+                  eq, n, X, m, 0.0, B, n);
 
       free(enorm);
       free(er);
