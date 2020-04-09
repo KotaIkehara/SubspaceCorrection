@@ -17,7 +17,7 @@ set ylabel 'Relative residual norm'
 set logscale y
 set format y " 10^{%T}"
 
-plot   "../data/G3_circuit/ignore2/G3_circuit_ignore_zite=0_th=1.dat" using 1:2 with line title 'CG'
-replot   "../data/G3_circuit/ignore2/G3_circuit_ignore_zite=1_th=1.dat" using 1:2 with line @dt1 title 'SC-CG({/Symbol a}=1, 2, 3, 4)'
-
-replot   "../data/G3_circuit/ignore2/G3_circuit_ignore_zite=1_th=5.dat" using 1:2 with line @dt2 title 'SC-CG({/Symbol a}=5)'
+plot   "../data2/rand/G3_circuit/ICCG/G3_circuit_iccg_zite=1_th=3.dat" using 1:2 with line @dt1 title 'ICCG'
+replot   "../data2/rand/G3_circuit/SCICCG/G3_circuit_sciccg_zite=1_th=3.dat" using 1:2 with line @dt2 title 'SC-ICCG({/Symbol a}=3)'
+replot   "../data2/rand/G3_circuit/SCICCG/G3_circuit_sciccg_zite=1_th=4.dat" using 1:2 with line @dt3 title 'SC-ICCG({/Symbol a}=4)'
+replot   "../data2/rand/G3_circuit/SCICCG/G3_circuit_sciccg_zite=1_th=5.dat" using 1:2 with line @dt3 title 'SC-ICCG({/Symbol a}=5)'

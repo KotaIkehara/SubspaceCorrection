@@ -16,7 +16,6 @@ set ylabel 'Relative residual norm'
 set logscale y
 set format y " 10^{%T}"
 
-plot   "../data/thermal2/ignore2/thermal2_ignore_zite=0_th=1.dat" using 1:2 with line title 'CG'
-replot   "../data/thermal2/ignore2/thermal2_ignore_zite=1_th=1.dat" using 1:2 with line @dt1 title 'SC-CG({/Symbol a}=1, 2, 3, 4)'
-replot   "../data/thermal2/ignore2/thermal2_ignore_zite=1_th=5.dat" using 1:2 with line @dt5 title 'SC-CG({/Symbol a}=5)'
-replot   "../data/thermal2/ignore2/thermal2_ignore_zite=1_th=6.dat" using 1:2 with line @dt6 title 'SC-CG({/Symbol a}=6)'
+plot   "../data2/rand/thermal2/ICCG/thermal2_iccg_zite=1_th=3.dat" using 1:2 with line @dt1 title 'ICCG'
+replot   "../data2/rand/thermal2/SCICCG/thermal2_sciccg_zite=1_th=3.dat" using 1:2 with line @dt2 title 'SC-ICCG({/Symbol a}=3, 4)'
+replot   "../data2/rand/thermal2/SCICCG/thermal2_sciccg_zite=1_th=5.dat" using 1:2 with line @dt3 title 'SC-ICCG({/Symbol a}=5)'
