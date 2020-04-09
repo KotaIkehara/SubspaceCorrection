@@ -287,7 +287,7 @@ int main(int argc, char *argv[]) {
     for (i = 0; i < n; i++) {
       b[i] = rand() / (double)RAND_MAX;
       // if (zite == 0) b[i]=1.0;
-      b[i] = 1.0;
+      // b[i] = 1.0;
       bnorm += fabs(b[i]) * fabs(b[i]);
     }
 

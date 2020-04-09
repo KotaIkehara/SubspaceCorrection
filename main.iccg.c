@@ -280,7 +280,7 @@ int main(int argc, char *argv[]) {
     bnorm = 0.0;
     for (i = 0; i < n; i++) {
       b[i] = rand() / (double)RAND_MAX;
-      b[i] = 1.0;
+      // b[i] = 1.0;
       bnorm += fabs(b[i]) * fabs(b[i]);
     }
 
