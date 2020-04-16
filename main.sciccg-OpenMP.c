@@ -1,5 +1,6 @@
 #include <math.h>
 #include <mkl.h>
+#include <omp.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -42,6 +43,7 @@ int main(int argc, char *argv[]) {
       if (nnonzero == 0) {
         sscanf(tmp, "%d %d %d", &n, &n, &nnonzero);
         nnonzero_row = (int *)malloc(sizeof(int) * n);
+#pragma omp parallel for
         for (j = 0; j < n; j++) {
           nnonzero_row[j] = 0;
         }
@@ -64,6 +66,7 @@ int main(int argc, char *argv[]) {
 
   row_ptr = (int *)malloc(sizeof(int) * (n + 1));
   row_ptr[0] = 0;
+  // TODO: OMP
   for (i = 1; i < n + 1; i++) {
     row_ptr[i] = row_ptr[i - 1] + nnonzero_row[i - 1];
   }
@@ -90,13 +93,16 @@ int main(int argc, char *argv[]) {
         col_ind = (int *)malloc(sizeof(int) * nnonzero);
         fill = (int *)malloc(sizeof(int) * (n + 1));
         D = (double *)malloc(sizeof(double) * n);
+#pragma omp parallel for
         for (i = 0; i < n; i++) {
           D[i] = 0.0;
         }
+#pragma omp parallel for
         for (j = 0; j < nnonzero; j++) {
           val[j] = 0.0;
           col_ind[j] = 0;
         }
+#pragma omp parallel for
         for (j = 0; j < n + 1; j++) {
           fill[j] = 0;
         }
@@ -128,6 +134,7 @@ int main(int argc, char *argv[]) {
 
   // diagonal scaling
   // D^(-1) * A * D(-1)
+  // TODO: OMP
   for (i = 0; i < n; i++) {
     for (j = row_ptr[i]; j < row_ptr[i + 1]; j++) {
       val[j] = val[j] / (D[i] * D[col_ind[j]]);
@@ -139,6 +146,7 @@ int main(int argc, char *argv[]) {
   // b: right hand vector
   double *b;
   b = (double *)malloc(sizeof(double) * n);
+#pragma omp parallel for
   for (i = 0; i < n; i++) {
     b[i] = 1.0;
   }
@@ -221,10 +229,12 @@ int main(int argc, char *argv[]) {
 
     if (zite == 0) {
       ganma = 1.0;
+#pragma omp parallel for
       for (i = 0; i < n; i++) {
         diag[i] = 0.0;
         iuhead[i] = 0;
       }
+#pragma omp parallel for
       for (i = 0; i < nnonzero; i++) {
         iucol[i] = 0;
         u[i] = 0.0;
@@ -232,7 +242,7 @@ int main(int argc, char *argv[]) {
 
       ku = 0;
       iuhead[0] = 1;
-
+      // TODO:OMP
       for (i = 0; i < n; i++) {
         ku = 0;
         kl = 0;
@@ -276,14 +286,16 @@ int main(int argc, char *argv[]) {
           break;
         }
       }
-
       // end IC decomposition
+
+#pragma omp parallel for
       for (i = 0; i < n; i++) {
         diag[i] = 1.0 / diag[i];
       }
     }
 
     bnorm = 0.0;
+    // TODO: OMP
     for (i = 0; i < n; i++) {
       b[i] = rand() / (double)RAND_MAX;
       // if (zite == 0) b[i]=1.0;
@@ -291,13 +303,15 @@ int main(int argc, char *argv[]) {
       bnorm += fabs(b[i]) * fabs(b[i]);
     }
 
-    //     printf("bnorm = %f , %d\n", bnorm, n);
+//     printf("bnorm = %f , %d\n", bnorm, n);
+#pragma omp parallel for
     for (i = 0; i < n; i++) {
       solx[i] = 0.0;
       //      diag[i] = 1.0 / diag[i];
     }
 
     // calc Residual
+    // TODO: OMP
     for (i = 0; i < n; i++) {
       ar0 = 0.0;
       for (j = row_ptr[i]; j < row_ptr[i + 1]; j++) {
@@ -314,12 +328,14 @@ int main(int argc, char *argv[]) {
     cgrop = 0.0;
 
     if (zite == 1) {
+#pragma omp parallel for private(j)
       for (i = 0; i < m_max; i++) {
         for (j = 0; j < n; j++) {
           ab[i * n + j] = 0.0;
         }
       }
 
+      // TODO: OMP
       for (i = 0; i < m_max; i++) {
         for (j = 0; j < n; j++) {
           for (k = row_ptr[j]; k < row_ptr[j + 1]; k++) {
@@ -336,10 +352,12 @@ int main(int argc, char *argv[]) {
     }
 
     for (ite = 1; ite < nitecg; ite++) {
+#pragma omp parallel for
       for (i = 0; i < n; i++) {
         z[i] = r[i];
       }
       // Forward substitution
+      // TODO: OMP
       for (i = 0; i < n; i++) {
         for (j = iuhead[i]; j < iuhead[i + 1]; j++) {
           jj = iucol[j];
@@ -351,6 +369,7 @@ int main(int argc, char *argv[]) {
       z[n - 1] = z[n - 1] * diag[n - 1];
 
       // backward substitution
+      // TODO: OMP
       for (i = n - 2; i >= 0; --i) {
         for (j = iuhead[i + 1] - 1; j >= iuhead[i]; --j) {
           jj = iucol[j];
@@ -380,7 +399,7 @@ int main(int argc, char *argv[]) {
         /***Compute Bu ***/
         cblas_dgemm(CblasColMajor, CblasNoTrans, CblasNoTrans, n, 1, m_max, 1.0,
                     B, n, f, m_max, 0.0, Bu, n);
-
+        // TODO: OMP
         for (i = 0; i < n; i++) {
           z[i] += Bu[i];
         }
@@ -389,26 +408,29 @@ int main(int argc, char *argv[]) {
 
       cgropp = cgrop;
       cgrop = 0.0;
-
+      // TODO: OMP
       for (i = 0; i < n; i++) {
         cgrop += r[i] * z[i];
       }
 
       if (ite == 1) {
+#pragma omp parallel for
         for (i = 0; i < n; i++) {
           pn[i] = z[i];
         }
       } else {
         beta = cgrop / cgropp;
+        // TODO: OMP
         for (i = 0; i < n; i++) {
           pn[i] = z[i] + beta * p[i];
         }
       }
-
+#pragma omp parallel for
       for (i = 0; i < n; i++) {
         q[i] = 0.0;
       }
 
+      // TODO: OMP
       for (i = 0; i < n; i++) {
         for (j = row_ptr[i]; j < row_ptr[i + 1]; j++) {
           jj = col_ind[j];
@@ -417,22 +439,25 @@ int main(int argc, char *argv[]) {
       }
 
       alphat = 0.0;
+      // TODO: OMP
       for (i = 0; i < n; i++) {
         alphat = alphat + pn[i] * q[i];
       }
       alpha = cgrop / alphat;
 
+      // TODO: OMP
       for (i = 0; i < n; i++) {
         solx[i] = solx[i] + alpha * pn[i];
         r[i] = r[i] - alpha * q[i];
       }
-
+#pragma omp parallel for
       for (i = 0; i < n; i++) {
         p[i] = pn[i];
       }
 
       rnorm = 0.0;
 
+      // TODO: OMP
       for (i = 0; i < n; i++) {
         rnorm = rnorm + fabs(r[i]) * fabs(r[i]);
       }
@@ -457,6 +482,7 @@ int main(int argc, char *argv[]) {
             it = it + pow(-1, l) * floor((ite - 1) / pow(m, l));
           }
           j = it % m;
+#pragma omp parallel for private(j)
           for (i = 0; i < n; i++) {
             _solx[j * n + i] = solx[i];
           }
@@ -471,6 +497,7 @@ int main(int argc, char *argv[]) {
 
     if (zite == 0) {
       // e = x - x~
+      // TODO: OMP
       for (i = 0; i < m; i++) {
         for (j = 0; j < n; j++) {
           _solx[(i * n) + j] = solx[j] - _solx[(i * n) + j];
@@ -492,6 +519,7 @@ int main(int argc, char *argv[]) {
         }
       }
 
+      // TODO: OMP
       for (i = 0; i < m; i++) {
         for (j = 0; j < n; j++) {
           enorm[i] += _solx[i * n + j] * _solx[i * n + j];
@@ -499,12 +527,14 @@ int main(int argc, char *argv[]) {
         enorm[i] = sqrt(enorm[i]);
       }
 
+      // TODO: OMP
       for (i = 0; i < m; i++) {
         er[i * m + i] = enorm[i];
         for (j = 0; j < n; j++) {
           eq[i * n + j] = _solx[i * n + j] / er[i * m + i];
         }
 
+        // TODO: OMP
         for (j = i + 1; j < m; j++) {
           for (k = 0; k < n; k++) {
             er[i * m + j] += eq[i * n + k] * _solx[j * n + k];
@@ -524,11 +554,14 @@ int main(int argc, char *argv[]) {
       X2 = (double *)malloc(sizeof(double) * (m * m));
       Y = (double *)malloc(m * sizeof(double));
 
+#pragma omp parallel for private(j)
       for (i = 0; i < m; i++) {
         for (j = 0; j < n; j++) {
           ae[i * n + j] = 0;
         }
       }
+
+      // TODO: OMP
       for (i = 0; i < m; i++) {
         for (k = 0; k < n; k++) {
           for (j = row_ptr[k]; j < row_ptr[k + 1]; j++) {
