@@ -43,7 +43,6 @@ int main(int argc, char *argv[]) {
       if (nnonzero == 0) {
         sscanf(tmp, "%d %d %d", &n, &n, &nnonzero);
         nnonzero_row = (int *)malloc(sizeof(int) * n);
-#pragma omp parallel for
         for (j = 0; j < n; j++) {
           nnonzero_row[j] = 0;
         }
@@ -93,16 +92,13 @@ int main(int argc, char *argv[]) {
         col_ind = (int *)malloc(sizeof(int) * nnonzero);
         fill = (int *)malloc(sizeof(int) * (n + 1));
         D = (double *)malloc(sizeof(double) * n);
-#pragma omp parallel for
         for (i = 0; i < n; i++) {
           D[i] = 0.0;
         }
-#pragma omp parallel for
         for (j = 0; j < nnonzero; j++) {
           val[j] = 0.0;
           col_ind[j] = 0;
         }
-#pragma omp parallel for
         for (j = 0; j < n + 1; j++) {
           fill[j] = 0;
         }
@@ -146,7 +142,6 @@ int main(int argc, char *argv[]) {
   // b: right hand vector
   double *b;
   b = (double *)malloc(sizeof(double) * n);
-#pragma omp parallel for
   for (i = 0; i < n; i++) {
     b[i] = 1.0;
   }
@@ -482,7 +477,7 @@ int main(int argc, char *argv[]) {
             it = it + pow(-1, l) * floor((ite - 1) / pow(m, l));
           }
           j = it % m;
-#pragma omp parallel for private(j)
+          // #pragma omp parallel for private(j) => This is bad coding!
           for (i = 0; i < n; i++) {
             _solx[j * n + i] = solx[i];
           }
