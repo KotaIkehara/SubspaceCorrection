@@ -8,4 +8,6 @@
 #PJM -j
 #------- Program execution -------#
 export OMP_NUM_THREADS=1
-./iccg.out mtx/thermal2.mtx 1
+./iccg.out mtx/G3_circuit.mtx 3
+./iccg.out mtx/G3_circuit.mtx 4
+./iccg.out mtx/G3_circuit.mtx 5

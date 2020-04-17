@@ -214,7 +214,7 @@ int main(int argc, char *argv[]) {
 
     // t0 = get_time();
     if (zite == 1) {
-      sprintf(sfile, "thermal1_sciccg_zite=%d_th=%d.dat", zite, -threshold);
+      sprintf(sfile, "G3_circuit_sciccg_zite=%d_th=%d.dat", zite, -threshold);
       fp = fopen(sfile, "w");
       fprintf(fp, "#ite residual of %s\n", argv[1]);
     }
@@ -287,7 +287,7 @@ int main(int argc, char *argv[]) {
     for (i = 0; i < n; i++) {
       b[i] = rand() / (double)RAND_MAX;
       // if (zite == 0) b[i]=1.0;
-      b[i] = 1.0;
+      // b[i] = 1.0;
       bnorm += fabs(b[i]) * fabs(b[i]);
     }
 

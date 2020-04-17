@@ -15,9 +15,6 @@ set xlabel 'Iteration'
 set ylabel 'Relative residual norm'
 set logscale y
 set format y " 10^{%T}"
+set yrange [0.000001:1000]
 
 plot   "../data/s3rmq4m1/ignore2/s3rmq4m1_ignore_zite=0_th=1.dat" using 1:2 with line title 'CG'
-replot   "../data/s3rmq4m1/ignore2/s3rmq4m1_ignore_zite=1_th=1.dat" using 1:2 with line @dt1 title 'SC-CG({/Symbol a}=1, 2, 3, 4)'
-replot   "../data/s3rmq4m1/ignore2/s3rmq4m1_ignore_zite=1_th=5.dat" using 1:2 with line @dt2 title 'SC-CG({/Symbol a}=5)'
-replot   "../data/s3rmq4m1/ignore2/s3rmq4m1_ignore_zite=1_th=6.dat" using 1:2 with line @dt2 title 'SC-CG({/Symbol a}=6, 7, 8)'
-replot   "../data/s3rmq4m1/ignore2/s3rmq4m1_ignore_zite=1_th=9.dat" using 1:2 with line @dt6 title 'SC-CG({/Symbol a}=9)'
