@@ -290,7 +290,6 @@ int main(int argc, char *argv[]) {
     }
 
     bnorm = 0.0;
-    // TODO: OMP
     for (i = 0; i < n; i++) {
       b[i] = rand() / (double)RAND_MAX;
       // if (zite == 0) b[i]=1.0;
@@ -394,7 +393,7 @@ int main(int argc, char *argv[]) {
         /***Compute Bu ***/
         cblas_dgemm(CblasColMajor, CblasNoTrans, CblasNoTrans, n, 1, m_max, 1.0,
                     B, n, f, m_max, 0.0, Bu, n);
-        // TODO: OMP
+#pragma omp parallel for
         for (i = 0; i < n; i++) {
           z[i] += Bu[i];
         }
@@ -403,7 +402,7 @@ int main(int argc, char *argv[]) {
 
       cgropp = cgrop;
       cgrop = 0.0;
-      // TODO: OMP
+      // TODO #pragma omp parallel for
       for (i = 0; i < n; i++) {
         cgrop += r[i] * z[i];
       }
@@ -415,7 +414,7 @@ int main(int argc, char *argv[]) {
         }
       } else {
         beta = cgrop / cgropp;
-        // TODO: OMP
+        // TODO #pragma omp parallel for
         for (i = 0; i < n; i++) {
           pn[i] = z[i] + beta * p[i];
         }
@@ -434,13 +433,13 @@ int main(int argc, char *argv[]) {
       }
 
       alphat = 0.0;
-      // TODO: OMP
+      // TODO #pragma omp parallel for
       for (i = 0; i < n; i++) {
         alphat = alphat + pn[i] * q[i];
       }
       alpha = cgrop / alphat;
 
-      // TODO: OMP
+#pragma omp parallel for
       for (i = 0; i < n; i++) {
         solx[i] = solx[i] + alpha * pn[i];
         r[i] = r[i] - alpha * q[i];
@@ -452,7 +451,7 @@ int main(int argc, char *argv[]) {
 
       rnorm = 0.0;
 
-      // TODO: OMP
+#pragma omp parallel for
       for (i = 0; i < n; i++) {
         rnorm = rnorm + fabs(r[i]) * fabs(r[i]);
       }
@@ -477,7 +476,7 @@ int main(int argc, char *argv[]) {
             it = it + pow(-1, l) * floor((ite - 1) / pow(m, l));
           }
           j = it % m;
-          // #pragma omp parallel for private(j) => This is bad coding!
+#pragma omp parallel for
           for (i = 0; i < n; i++) {
             _solx[j * n + i] = solx[i];
           }
@@ -491,8 +490,8 @@ int main(int argc, char *argv[]) {
     }  // end ICCG
 
     if (zite == 0) {
-      // e = x - x~
-      // TODO: OMP
+// e = x - x~
+#pragma omp parallel for private(j)
       for (i = 0; i < m; i++) {
         for (j = 0; j < n; j++) {
           _solx[(i * n) + j] = solx[j] - _solx[(i * n) + j];
@@ -514,7 +513,7 @@ int main(int argc, char *argv[]) {
         }
       }
 
-      // TODO: OMP
+#pragma omp parallel for private(j)
       for (i = 0; i < m; i++) {
         for (j = 0; j < n; j++) {
           enorm[i] += _solx[i * n + j] * _solx[i * n + j];
@@ -528,8 +527,6 @@ int main(int argc, char *argv[]) {
         for (j = 0; j < n; j++) {
           eq[i * n + j] = _solx[i * n + j] / er[i * m + i];
         }
-
-        // TODO: OMP
         for (j = i + 1; j < m; j++) {
           for (k = 0; k < n; k++) {
             er[i * m + j] += eq[i * n + k] * _solx[j * n + k];
