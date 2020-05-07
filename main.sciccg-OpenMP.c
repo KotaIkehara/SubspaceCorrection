@@ -65,7 +65,6 @@ int main(int argc, char *argv[]) {
 
   row_ptr = (int *)malloc(sizeof(int) * (n + 1));
   row_ptr[0] = 0;
-  // TODO: OMP
   for (i = 1; i < n + 1; i++) {
     row_ptr[i] = row_ptr[i - 1] + nnonzero_row[i - 1];
   }
@@ -402,7 +401,7 @@ int main(int argc, char *argv[]) {
 
       cgropp = cgrop;
       cgrop = 0.0;
-      // TODO #pragma omp parallel for
+#pragma omp parallel for reduction(+ : cgrop)
       for (i = 0; i < n; i++) {
         cgrop += r[i] * z[i];
       }
@@ -414,7 +413,7 @@ int main(int argc, char *argv[]) {
         }
       } else {
         beta = cgrop / cgropp;
-        // TODO #pragma omp parallel for
+#pragma omp parallel for
         for (i = 0; i < n; i++) {
           pn[i] = z[i] + beta * p[i];
         }
@@ -424,25 +423,25 @@ int main(int argc, char *argv[]) {
         q[i] = 0.0;
       }
 
-      // TODO: OMP
+#pragma omp parallel for private(j, jj)
       for (i = 0; i < n; i++) {
         for (j = row_ptr[i]; j < row_ptr[i + 1]; j++) {
           jj = col_ind[j];
-          q[i] = q[i] + val[j] * pn[jj];
+          q[i] += val[j] * pn[jj];
         }
       }
 
       alphat = 0.0;
-      // TODO #pragma omp parallel for
+#pragma omp parallel for reduction(+ : alphat)
       for (i = 0; i < n; i++) {
-        alphat = alphat + pn[i] * q[i];
+        alphat += pn[i] * q[i];
       }
       alpha = cgrop / alphat;
 
 #pragma omp parallel for
       for (i = 0; i < n; i++) {
-        solx[i] = solx[i] + alpha * pn[i];
-        r[i] = r[i] - alpha * q[i];
+        solx[i] += alpha * pn[i];
+        r[i] -= alpha * q[i];
       }
 #pragma omp parallel for
       for (i = 0; i < n; i++) {
@@ -451,9 +450,9 @@ int main(int argc, char *argv[]) {
 
       rnorm = 0.0;
 
-#pragma omp parallel for
+#pragma omp parallel for reduction(+ : rnorm)
       for (i = 0; i < n; i++) {
-        rnorm = rnorm + fabs(r[i]) * fabs(r[i]);
+        rnorm += fabs(r[i]) * fabs(r[i]);
       }
 
       //  printf("ite:%d, %lf\n", ite, sqrt(rnorm / bnorm)); //収束判定
