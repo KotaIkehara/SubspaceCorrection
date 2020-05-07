@@ -328,7 +328,7 @@ int main(int argc, char *argv[]) {
         }
       }
 
-      // TODO: OMP
+#pragma omp parallel for private(j, k)
       for (i = 0; i < m_max; i++) {
         for (j = 0; j < n; j++) {
           for (k = row_ptr[j]; k < row_ptr[j + 1]; k++) {
