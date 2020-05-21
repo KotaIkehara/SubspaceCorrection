@@ -236,7 +236,7 @@ int main(int argc, char *argv[]) {
 
       ku = 0;
       iuhead[0] = 1;
-      // TODO:OMP
+      // TODO:OMP single
       for (i = 0; i < n; i++) {
         ku = 0;
         kl = 0;
@@ -258,7 +258,7 @@ int main(int argc, char *argv[]) {
         }
       }
 
-      // IC decomposition
+      // IC decomposition TODO
       for (i = 0; i < n; i++) {
         for (j = iuhead[i]; j < iuhead[i + 1]; j++) {
           jj = iucol[j];
@@ -303,8 +303,9 @@ int main(int argc, char *argv[]) {
       //      diag[i] = 1.0 / diag[i];
     }
 
-    // calc Residual
-    // TODO: OMP
+// calc Residual
+// TODO: OMP
+#pragma omp parallel for private(ar0, j, jj)
     for (i = 0; i < n; i++) {
       ar0 = 0.0;
       for (j = row_ptr[i]; j < row_ptr[i + 1]; j++) {
@@ -399,6 +400,7 @@ int main(int argc, char *argv[]) {
       }
       // end SC
 
+      // TODO single or barrier
       cgropp = cgrop;
       cgrop = 0.0;
 #pragma omp parallel for reduction(+ : cgrop)
@@ -430,7 +432,7 @@ int main(int argc, char *argv[]) {
           q[i] += val[j] * pn[jj];
         }
       }
-
+      // TODO single
       alphat = 0.0;
 #pragma omp parallel for reduction(+ : alphat)
       for (i = 0; i < n; i++) {
@@ -545,14 +547,14 @@ int main(int argc, char *argv[]) {
       X2 = (double *)malloc(sizeof(double) * (m * m));
       Y = (double *)malloc(m * sizeof(double));
 
-#pragma omp parallel for private(j)
       for (i = 0; i < m; i++) {
+#pragma omp parallel for
         for (j = 0; j < n; j++) {
           ae[i * n + j] = 0;
         }
       }
 
-      // TODO: OMP
+#pragma omp parallel for private(k, j, jj)
       for (i = 0; i < m; i++) {
         for (k = 0; k < n; k++) {
           for (j = row_ptr[k]; j < row_ptr[k + 1]; j++) {
