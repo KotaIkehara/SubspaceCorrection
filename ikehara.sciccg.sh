@@ -7,7 +7,5 @@
 #PJM -g i21519
 #PJM -j
 #------- Program execution -------#
-export OMP_NUM_THREADS=1
-./sciccg.out mtx/G3_circuit.mtx 3
-./sciccg.out mtx/G3_circuit.mtx 4
-./sciccg.out mtx/G3_circuit.mtx 5
+export MKL_DYNAMIC=FALSE MKL_NUM_THREADS=8 OMP_NUM_THREADS=8 OMP_NESTED=TRUE
+./sciccg-OpenMP.out mtx/thermal1.mtx 3
