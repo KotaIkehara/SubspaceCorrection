@@ -355,39 +355,44 @@ int main(int argc, char *argv[]) {
     }  // end of the parallel region
 
     for (ite = 1; ite < nitecg; ite++) {
-#pragma omp parallel for
-      for (i = 0; i < n; i++) {
-        z[i] = r[i];
-      }
-      // Forward substitution
-      // TODO: OMP
-      for (i = 0; i < n; i++) {
-        for (j = iuhead[i]; j < iuhead[i + 1]; j++) {
-          jj = iucol[j];
-          z[jj] += -z[i] * u[j] * diag[i];
+#pragma omp parallel
+      {
+#pragma omp for
+        for (i = 0; i < n; i++) {
+          z[i] = r[i];
+        }
+// Forward substitution
+// TODO: OMP
+#pragma omp single
+        {
+          for (i = 0; i < n; i++) {
+            for (j = iuhead[i]; j < iuhead[i + 1]; j++) {
+              jj = iucol[j];
+              z[jj] += -z[i] * u[j] * diag[i];
+            }
+          }
+          // end Forward substitution
+
+          z[n - 1] = z[n - 1] * diag[n - 1];
+
+          // backward substitution
+          // TODO: OMP
+          for (i = n - 2; i >= 0; --i) {
+            for (j = iuhead[i + 1] - 1; j >= iuhead[i]; --j) {
+              jj = iucol[j];
+              z[i] += -u[j] * z[jj];
+            }
+            z[i] *= diag[i];
+          }
+          // end backward substitutions
+
+          // ignore IC
+          // for (i = 0; i < n; i++)
+          // {
+          //   z[i] = r[i];
+          // }
         }
       }
-      // end Forward substitution
-
-      z[n - 1] = z[n - 1] * diag[n - 1];
-
-      // backward substitution
-      // TODO: OMP
-      for (i = n - 2; i >= 0; --i) {
-        for (j = iuhead[i + 1] - 1; j >= iuhead[i]; --j) {
-          jj = iucol[j];
-          z[i] += -u[j] * z[jj];
-        }
-        z[i] *= diag[i];
-      }
-      // end backward substitutions
-
-      // ignore IC
-      // for (i = 0; i < n; i++)
-      // {
-      //   z[i] = r[i];
-      // }
-
       // begin SC
       if (zite > 0) {
         // Step1. Compute f = B^T * r
@@ -409,16 +414,18 @@ int main(int argc, char *argv[]) {
       }
       // end SC
 
-      // TODO single or barrier
-      cgropp = cgrop;
-      cgrop = 0.0;
-
 #pragma omp parallel
       {
+#pragma omp single
+        {
+          cgropp = cgrop;
+          cgrop = 0.0;
+        }
 #pragma omp for reduction(+ : cgrop)
         for (i = 0; i < n; i++) {
           cgrop += r[i] * z[i];
         }
+
         if (ite == 1) {
 #pragma omp for
           for (i = 0; i < n; i++) {
@@ -443,16 +450,16 @@ int main(int argc, char *argv[]) {
             q[i] += val[j] * pn[jj];
           }
         }
-      }
-      // TODO single
-      alphat = 0.0;
-#pragma omp parallel for reduction(+ : alphat)
-      for (i = 0; i < n; i++) {
-        alphat += pn[i] * q[i];
-      }
-      alpha = cgrop / alphat;
-#pragma omp parallel
-      {
+// TODO single
+#pragma omp single
+        { alphat = 0.0; }
+#pragma omp for reduction(+ : alphat)
+        for (i = 0; i < n; i++) {
+          alphat += pn[i] * q[i];
+        }
+#pragma omp single
+        { alpha = cgrop / alphat; }
+
 #pragma omp for
         for (i = 0; i < n; i++) {
           solx[i] += alpha * pn[i];
@@ -462,19 +469,20 @@ int main(int argc, char *argv[]) {
         for (i = 0; i < n; i++) {
           p[i] = pn[i];
         }
-      }
 
-      rnorm = 0.0;
+#pragma omp single
+        { rnorm = 0.0; }
 
-#pragma omp parallel for reduction(+ : rnorm)
-      for (i = 0; i < n; i++) {
-        rnorm += fabs(r[i]) * fabs(r[i]);
-      }
+#pragma omp for reduction(+ : rnorm)
+        for (i = 0; i < n; i++) {
+          rnorm += fabs(r[i]) * fabs(r[i]);
+        }
 
-      //  printf("ite:%d, %lf\n", ite, sqrt(rnorm / bnorm)); //収束判定
-      if (zite == 1) {
-        fprintf(fp, "%d %lf\n", ite, sqrt(rnorm / bnorm));
-      }
+        //  printf("ite:%d, %lf\n", ite, sqrt(rnorm / bnorm)); //収束判定
+        if (zite == 1) {
+          fprintf(fp, "%d %lf\n", ite, sqrt(rnorm / bnorm));
+        }
+      }  // end of parallel region
 
       if (sqrt(rnorm / bnorm) < err) {
         //       t1 = get_time();
