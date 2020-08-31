@@ -41,8 +41,7 @@ void ForwardBackwordSubstitution(int *iuhead, int *iucol, double *u, int n,
         z[i] += -u[j] * z[jj];
       }
       z[i] *= diag[i];
-    }
-    // end Backward Substitution
+    }  // end Backward Substitution
   }
 
   return;
@@ -352,8 +351,7 @@ int main(int argc, char *argv[]) {
           ar0 += val[j] * solx[jj];
         }
         r[i] = b[i] - ar0;
-      }
-      // end calc residual
+      }  // end calc residual
 
 #pragma omp single
       {
@@ -394,13 +392,13 @@ int main(int argc, char *argv[]) {
       {
         ForwardBackwordSubstitution(iuhead, iucol, u, n, diag, z, r);
 
-        // ignore IC
+        // Ignore IC
         // for (i = 0; i < n; i++)
         // {
         //   z[i] = r[i];
         // }
 
-        // begin SC
+        // Subspace Correction (SC)
         if (zite > 0) {
 #pragma omp single
           {
@@ -421,8 +419,7 @@ int main(int argc, char *argv[]) {
           for (i = 0; i < n; i++) {
             z[i] += Bu[i];
           }
-        }
-        // end SC
+        }  // end SC
 
 #pragma omp single
         {
@@ -440,7 +437,8 @@ int main(int argc, char *argv[]) {
             pn[i] = z[i];
           }
         } else {
-          beta = cgrop / cgropp;
+#pragma omp single
+          { beta = cgrop / cgropp; }
 #pragma omp for
           for (i = 0; i < n; i++) {
             pn[i] = z[i] + beta * p[i];
