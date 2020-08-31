@@ -13,6 +13,41 @@ double get_time() {
   return tv.tv_sec + (double)tv.tv_usec * 1e-6;
 }
 
+void ForwardBackwordSubstitution(int *iuhead, int *iucol, double *u, int n,
+                                 double *diag, double *z, double *r) {
+  int i, j, jj;
+
+#pragma omp for
+  for (i = 0; i < n; i++) {
+    z[i] = r[i];
+  }
+
+#pragma omp single
+  {
+    // Forward Substitution
+    for (i = 0; i < n; i++) {
+      for (j = iuhead[i]; j < iuhead[i + 1]; j++) {
+        jj = iucol[j];
+        z[jj] += -z[i] * u[j] * diag[i];
+      }
+    }  // end Forward Substitution
+
+    z[n - 1] = z[n - 1] * diag[n - 1];
+
+    // Backward Substitution
+    for (i = n - 2; i >= 0; --i) {
+      for (j = iuhead[i + 1] - 1; j >= iuhead[i]; --j) {
+        jj = iucol[j];
+        z[i] += -u[j] * z[jj];
+      }
+      z[i] *= diag[i];
+    }
+    // end Backward Substitution
+  }
+
+  return;
+}
+
 int main(int argc, char *argv[]) {
   FILE *fp;
   int *row_ptr, *fill, *col_ind;
@@ -357,33 +392,7 @@ int main(int argc, char *argv[]) {
     for (ite = 1; ite < nitecg; ite++) {
 #pragma omp parallel
       {
-#pragma omp for
-        for (i = 0; i < n; i++) {
-          z[i] = r[i];
-        }
-// TODO: OMP
-#pragma omp single
-        {
-          // Forward substitution
-          for (i = 0; i < n; i++) {
-            for (j = iuhead[i]; j < iuhead[i + 1]; j++) {
-              jj = iucol[j];
-              z[jj] += -z[i] * u[j] * diag[i];
-            }
-          }  // end Forward substitution
-
-          z[n - 1] = z[n - 1] * diag[n - 1];
-
-          // backward substitution
-          // TODO: OMP
-          for (i = n - 2; i >= 0; --i) {
-            for (j = iuhead[i + 1] - 1; j >= iuhead[i]; --j) {
-              jj = iucol[j];
-              z[i] += -u[j] * z[jj];
-            }
-            z[i] *= diag[i];
-          }
-        }  // end backward substitutions
+        ForwardBackwordSubstitution(iuhead, iucol, u, n, diag, z, r);
 
         // ignore IC
         // for (i = 0; i < n; i++)
