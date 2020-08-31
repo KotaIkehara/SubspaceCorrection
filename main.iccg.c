@@ -208,7 +208,7 @@ int main(int argc, char *argv[]) {
 
     //    t0 = get_time();
     if (zite == 1) {
-      sprintf(sfile, "G3_circuit_iccg_zite=%d_th=%d.dat", zite, -threshold);
+      sprintf(sfile, "thermal1_iccg_zite=%d_th=%d.dat", zite, -threshold);
       fp = fopen(sfile, "w");
       fprintf(fp, "#ite residual of %s\n", argv[1]);
     }
