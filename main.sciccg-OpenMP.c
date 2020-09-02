@@ -91,6 +91,32 @@ void mkbu(double *val, int n, int *col_ind, int *row_ptr, double *diag,
   return;
 }
 
+void IC(int n, double *diag, int *iuhead, int *iucol, double *u, int *inps,
+        int *inpe, int myid) {
+  int i, j, jj, jp, ji, jjp;
+  for (i = 0; i < n; i++) {
+    for (j = iuhead[i]; j < iuhead[i + 1]; j++) {
+      jj = iucol[j];
+
+      diag[iucol[j]] = diag[iucol[j]] - u[j] * u[j] / diag[i];
+
+      for (jp = j + 1; jp < iuhead[i + 1]; jp++) {
+        jjp = iucol[jp];
+        for (ji = iuhead[jj]; ji < iuhead[jj + 1]; ji++) {
+          if (iucol[ji] == jjp) {
+            u[ji] = u[ji] - u[j] * u[jp] / diag[i];
+            // exit??
+            break;
+          }
+        }
+      }
+    }
+    if (fabs(diag[i]) < 0.001) {
+      break;
+    }
+  }
+}
+
 int main(int argc, char *argv[]) {
   FILE *fp;
   int *row_ptr, *fill, *col_ind;
@@ -252,7 +278,7 @@ int main(int argc, char *argv[]) {
   diag = (double *)malloc(sizeof(double) * n);
   z = (double *)malloc(sizeof(double) * n);
 
-  int ku, kl, jj, ji, jjp, jp;
+  int jj;
   double ganma, rnorm, bnorm;
   int ite;
   // convergence check
@@ -335,30 +361,8 @@ int main(int argc, char *argv[]) {
         {
           mkbu(val, n, col_ind, row_ptr, diag, u, iuhead, iucol, inps, inpe,
                myid, ganma);
-          // IC decomposition TODO
-          for (i = 0; i < n; i++) {
-            for (j = iuhead[i]; j < iuhead[i + 1]; j++) {
-              jj = iucol[j];
-
-              diag[iucol[j]] = diag[iucol[j]] - u[j] * u[j] / diag[i];
-
-              for (jp = j + 1; jp < iuhead[i + 1]; jp++) {
-                jjp = iucol[jp];
-                for (ji = iuhead[jj]; ji < iuhead[jj + 1]; ji++) {
-                  if (iucol[ji] == jjp) {
-                    u[ji] = u[ji] - u[j] * u[jp] / diag[i];
-                    // exit??
-                    break;
-                  }
-                }
-              }
-            }
-            if (fabs(diag[i]) < 0.001) {
-              break;
-            }
-          }
+          IC(n, diag, iuhead, iucol, u, inps, inpe, myid);
         }
-        // end IC decomposition
 #pragma omp for
         for (i = 0; i < n; i++) {
           diag[i] = 1.0 / diag[i];
