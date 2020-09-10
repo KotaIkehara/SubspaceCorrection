@@ -119,8 +119,9 @@ void mkbu(double *val, int n, int *col_ind, int *row_ptr, double *diag,
           double ganma) {
   int kk, i, j, k, jj, jstart;
 
-  //対角スケーリング済みのため，対角要素は全て1.0となっている
-  for (i = istart; i < iend; i++) {
+//対角スケーリング済みのため，対角要素は全て1.0となっている
+#pragma omp for
+  for (i = 0; i < n; i++) {
     diag[i] = 1.0 * ganma;
   }
 
@@ -135,7 +136,7 @@ void mkbu(double *val, int n, int *col_ind, int *row_ptr, double *diag,
         u[kk + jstart] = val[j];
         kk++;
       }
-      iuhead[i + 1] = kk + jstart;
+      iuhead[i + 1] = jstart + kk;
     }
   }
 
