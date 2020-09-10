@@ -235,6 +235,94 @@ void calcErrorVectors(int n, int m, double *solx, double *_solx) {
   return;
 }
 
+void calcAE(int n, int m, int *row_ptr, int *col_ind, double *val, double *ae,
+            double *eq) {
+  int i, j, k, jj;
+
+#pragma omp for private(j)
+  for (i = 0; i < m; i++) {
+    for (j = 0; j < n; j++) {
+      ae[i * n + j] = 0;
+    }
+  }
+
+#pragma omp for private(k, j, jj)
+  for (i = 0; i < m; i++) {
+    for (k = 0; k < n; k++) {
+      for (j = row_ptr[k]; j < row_ptr[k + 1]; j++) {
+        jj = col_ind[j];
+        ae[i * n + k] += val[j] * eq[i * n + jj];
+      }
+    }
+  }
+}
+
+void calcAB(int n, int m, int m_max, int *row_ptr, int *col_ind, double *val,
+            double *B, double *ab) {
+  int i, j, k;
+#pragma omp for private(j)
+  for (i = 0; i < m_max; i++) {
+    for (j = 0; j < n; j++) {
+      ab[i * n + j] = 0.0;
+    }
+  }
+
+#pragma omp for private(j, k)
+  for (i = 0; i < m_max; i++) {
+    for (j = 0; j < n; j++) {
+      for (k = row_ptr[j]; k < row_ptr[j + 1]; k++) {
+        ab[i * n + j] += val[k] * B[i * n + col_ind[k]];
+      }
+    }
+  }
+  return;
+}
+
+void modifiedGramSchmidt(int n, int m, double *enorm, double *er, double *eq,
+                         double *_solx) {
+  int i, j, k;
+
+#pragma omp single
+  {
+    for (i = 0; i < m; i++) {
+      enorm[i] = 0;
+    }
+    for (i = 0; i < m; i++) {
+      for (j = 0; j < m; j++) {
+        er[i * m + j] = 0;
+      }
+    }
+  }
+
+#pragma omp for private(j)
+  for (i = 0; i < m; i++) {
+    for (j = 0; j < n; j++) {
+      enorm[i] += _solx[i * n + j] * _solx[i * n + j];
+    }
+    enorm[i] = sqrt(enorm[i]);
+  }
+
+#pragma omp single
+  {
+    for (i = 0; i < m; i++) {
+      er[i * m + i] = enorm[i];
+      for (j = 0; j < n; j++) {
+        eq[i * n + j] = _solx[i * n + j] / er[i * m + i];
+      }
+      for (j = i + 1; j < m; j++) {
+        for (k = 0; k < n; k++) {
+          er[i * m + j] += eq[i * n + k] * _solx[j * n + k];
+        }
+        for (k = 0; k < n; k++) {
+          _solx[j * n + k] += -eq[i * n + k] * er[i * m + j];
+        }
+      }
+    }
+  }
+
+  return;
+}
+
 int main(int argc, char *argv[]) {
   FILE *fp;
   int *row_ptr, *fill, *col_ind;
@@ -521,21 +609,8 @@ int main(int argc, char *argv[]) {
       }
 
       if (zite == 1) {
-#pragma omp for private(j)
-        for (i = 0; i < m_max; i++) {
-          for (j = 0; j < n; j++) {
-            ab[i * n + j] = 0.0;
-          }
-        }
+        calcAB(n, m, m_max, row_ptr, col_ind, val, B, ab);
 
-#pragma omp for private(j, k)
-        for (i = 0; i < m_max; i++) {
-          for (j = 0; j < n; j++) {
-            for (k = row_ptr[j]; k < row_ptr[j + 1]; k++) {
-              ab[i * n + j] += val[k] * B[i * n + col_ind[k]];
-            }
-          }
-        }
 #pragma omp single
         {
           cblas_dgemm(CblasColMajor, CblasTrans, CblasNoTrans, m_max, m_max, n,
@@ -702,66 +777,15 @@ int main(int argc, char *argv[]) {
       W = (double *)malloc(m * sizeof(double));
       X2 = (double *)malloc(sizeof(double) * (m * m));
       Y = (double *)malloc(m * sizeof(double));
+
 #pragma omp parallel
       {
         calcErrorVectors(n, m, solx, _solx);
 
-        /*--- Modified Gram-Schmidt orthogonalization ---*/
-        for (i = 0; i < m; i++) {
-          enorm[i] = 0;
-        }
-        for (i = 0; i < m; i++) {
-          for (j = 0; j < m; j++) {
-            er[i * m + j] = 0;
-          }
-        }
-#pragma omp for private(j)
-        for (i = 0; i < m; i++) {
-          for (j = 0; j < n; j++) {
-            enorm[i] += _solx[i * n + j] * _solx[i * n + j];
-          }
-          enorm[i] = sqrt(enorm[i]);
-        }
+        modifiedGramSchmidt(n, m, enorm, er, eq, _solx);
 
-// TODO: OMP
-#pragma omp single
-        {
-          for (i = 0; i < m; i++) {
-            er[i * m + i] = enorm[i];
-            for (j = 0; j < n; j++) {
-              eq[i * n + j] = _solx[i * n + j] / er[i * m + i];
-            }
-            for (j = i + 1; j < m; j++) {
-              for (k = 0; k < n; k++) {
-                er[i * m + j] += eq[i * n + k] * _solx[j * n + k];
-              }
-              for (k = 0; k < n; k++) {
-                _solx[j * n + k] =
-                    _solx[j * n + k] - eq[i * n + k] * er[i * m + j];
-              }
-            }
-          }
-        }
-        /*--- end Modified Gram-Schmidt orthogonalization ---*/
+        calcAE(n, m, row_ptr, col_ind, val, ae, eq);
 
-        /*--- E^T*A*E---*/
-
-#pragma omp for private(j)
-        for (i = 0; i < m; i++) {
-          for (j = 0; j < n; j++) {
-            ae[i * n + j] = 0;
-          }
-        }
-
-#pragma omp for private(k, j, jj)
-        for (i = 0; i < m; i++) {
-          for (k = 0; k < n; k++) {
-            for (j = row_ptr[k]; j < row_ptr[k + 1]; j++) {
-              jj = col_ind[j];
-              ae[i * n + k] += val[j] * eq[i * n + jj];
-            }
-          }
-        }
       }  // end of the parallel region
 
       // X = eq^T * ae
@@ -848,6 +872,7 @@ int main(int argc, char *argv[]) {
   te = get_time();
   printf("\n--- time: %lf ---\n\n", te - ts);
   printf("Total ite: %lf\n", total_ite / 50.0);
+
   free(B);
   free(f);
   free(ab);
