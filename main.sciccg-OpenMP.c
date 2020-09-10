@@ -283,8 +283,8 @@ int main(int argc, char *argv[]) {
         col_ind = (int *)malloc(sizeof(int) * nnonzero);
         fill = (int *)malloc(sizeof(int) * (n + 1));
         ad = (double *)malloc(sizeof(double) * n);
-        for (i = 0; i < n; i++) {
-          ad[i] = 0.0;
+        for (j = 0; j < n; j++) {
+          ad[j] = 0.0;
         }
         for (j = 0; j < nnonzero; j++) {
           val[j] = 0.0;
@@ -642,7 +642,8 @@ int main(int argc, char *argv[]) {
 
         //  printf("ite:%d, %lf\n", ite, sqrt(rnorm / bnorm)); //収束判定
         if (zite == 1) {
-          fprintf(fp, "%d %lf\n", ite, sqrt(rnorm / bnorm));
+#pragma omp single
+          { fprintf(fp, "%d %lf\n", ite, sqrt(rnorm / bnorm)); }
         }
       }  // end of parallel region
 
