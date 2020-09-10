@@ -205,6 +205,24 @@ void bic(int n, double *diag, int *iuhead, int *iucol, double *u, int istart,
   return;
 }
 
+void calcResidualVector(int n, int *row_ptr, int *col_ind, double *val,
+                        double *solx, double *r, double *b) {
+  int i, j, jj;
+  double ar0;
+
+#pragma omp for
+  for (i = 0; i < n; i++) {
+    ar0 = 0.0;
+    for (j = row_ptr[i]; j < row_ptr[i + 1]; j++) {
+      jj = col_ind[j];
+      ar0 += val[j] * solx[jj];
+    }
+    r[i] = b[i] - ar0;
+  }
+
+  return;
+}
+
 int main(int argc, char *argv[]) {
   FILE *fp;
   int *row_ptr, *fill, *col_ind;
@@ -368,7 +386,7 @@ int main(int argc, char *argv[]) {
   pn = (double *)malloc(sizeof(double) * n);
   r = (double *)malloc(sizeof(double) * n);
   double cgropp, cgrop;
-  double alpha, alphat, beta, ar0;
+  double alpha, alphat, beta;
   double *diag, *z;
   diag = (double *)malloc(sizeof(double) * n);
   z = (double *)malloc(sizeof(double) * n);
@@ -401,7 +419,6 @@ int main(int argc, char *argv[]) {
 
   lapack_int *pivot;
 
-  double t0, t1;
   double ts, te;
   int total_ite = 0;
 
@@ -416,7 +433,6 @@ int main(int argc, char *argv[]) {
     // b[i] = rand()/(double)RAND_MAX;
     //}
 
-    // t0 = get_time();
     if (zite == 1) {
       sprintf(sfile, "thermal1_sciccg_zite=%d_th=%d.dat", zite, -threshold);
       fp = fopen(sfile, "w");
@@ -482,17 +498,7 @@ int main(int argc, char *argv[]) {
         solx[i] = 0.0;
       }
 
-// Calc Residual
-// TODO: reduction reduction(+ : ar0)??
-#pragma omp for private(ar0, j, jj)
-      for (i = 0; i < n; i++) {
-        ar0 = 0.0;
-        for (j = row_ptr[i]; j < row_ptr[i + 1]; j++) {
-          jj = col_ind[j];
-          ar0 += val[j] * solx[jj];
-        }
-        r[i] = b[i] - ar0;
-      }  // end Calc Residual
+      calcResidualVector(n, row_ptr, col_ind, val, solx, r, b);
 
 #pragma omp single
       {
@@ -648,8 +654,6 @@ int main(int argc, char *argv[]) {
       }  // end of parallel region
 
       if (sqrt(rnorm / bnorm) < err) {
-        //       t1 = get_time();
-        //       printf("\n--- time: %lf ---\n\n", t1 - t0);
         if (zite > 0) total_ite = total_ite + ite;
         break;
       }
