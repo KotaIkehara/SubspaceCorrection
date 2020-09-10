@@ -119,8 +119,9 @@ void mkbu(double *val, int n, int *col_ind, int *row_ptr, double *diag,
           double ganma) {
   int kk, i, j, k, jj, jstart;
 
+  //対角スケーリング済みのため，対角要素は全て1.0となっている
   for (i = istart; i < iend; i++) {
-    diag[i] = val[i] * ganma;
+    diag[i] = 1.0 * ganma;
   }
 
   kk = 0;
@@ -128,8 +129,9 @@ void mkbu(double *val, int n, int *col_ind, int *row_ptr, double *diag,
   iuhead[istart] = jstart;
   for (i = istart; i < iend; i++) {
     for (j = row_ptr[i]; j < row_ptr[i + 1]; j++) {
-      if (col_ind[j] <= iend) {
-        iucol[kk + jstart] = col_ind[j];
+      jj = col_ind[j];
+      if (jj > i && jj < iend) {
+        iucol[kk + jstart] = jj;
         u[kk + jstart] = val[j];
         kk++;
       }
@@ -138,8 +140,6 @@ void mkbu(double *val, int n, int *col_ind, int *row_ptr, double *diag,
   }
 
 #pragma omp barrier
-  printf("myid: %d, iuhead[istart]: %d, iuhead[iend]: %d", myid, iuhead[istart],
-         iuhead[iend]);
 
   return;
 }
@@ -154,7 +154,7 @@ void ic(int n, double *diag, int *iuhead, int *iucol, double *u, int istart,
       for (j = iuhead[i]; j < iuhead[i + 1]; j++) {
         jj = iucol[j];
 
-        diag[iucol[j]] = diag[iucol[j]] - u[j] * u[j] / diag[i];
+        diag[jj] = diag[jj] - u[j] * u[j] / diag[i];
 
         for (jp = j + 1; jp < iuhead[i + 1]; jp++) {
           jjp = iucol[jp];
@@ -326,7 +326,6 @@ int main(int argc, char *argv[]) {
 
   // diagonal scaling
   // ad^(-1) * A * ad(-1)
-  // TODO: OMP
   for (i = 0; i < n; i++) {
     for (j = row_ptr[i]; j < row_ptr[i + 1]; j++) {
       val[j] = val[j] / (ad[i] * ad[col_ind[j]]);
@@ -450,10 +449,11 @@ int main(int argc, char *argv[]) {
           u[i] = 0.0;
         }
 
-        // mkbu(val, n, col_ind, row_ptr, diag, u, iuhead, iucol, istart, iend,
-        //      myid, ganma);
-        mku(val, n, col_ind, row_ptr, diag, u, iuhead, iucol, istart, iend,
-            myid, ganma);
+        mkbu(val, n, col_ind, row_ptr, diag, u, iuhead, iucol, istart, iend,
+             myid, ganma);
+        // mku(val, n, col_ind, row_ptr, diag, u, iuhead, iucol, istart,
+        // iend,
+        //     myid, ganma);
         // bic(n, diag, iuhead, iucol, u, istart, iend, myid);
         ic(n, diag, iuhead, iucol, u, istart, iend, myid);
 
