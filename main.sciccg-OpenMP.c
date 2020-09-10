@@ -223,6 +223,18 @@ void calcResidualVector(int n, int *row_ptr, int *col_ind, double *val,
   return;
 }
 
+void calcErrorVectors(int n, int m, double *solx, double *_solx) {
+  int i, j;
+#pragma omp for private(j)
+  for (i = 0; i < m; i++) {
+    for (j = 0; j < n; j++) {
+      _solx[(i * n) + j] = solx[j] - _solx[(i * n) + j];
+    }
+  }
+
+  return;
+}
+
 int main(int argc, char *argv[]) {
   FILE *fp;
   int *row_ptr, *fill, *col_ind;
@@ -666,7 +678,6 @@ int main(int argc, char *argv[]) {
             it = it + pow(-1, l) * floor((ite - 1) / pow(m, l));
           }
           j = it % m;
-#pragma omp parallel for
           for (i = 0; i < n; i++) {
             _solx[j * n + i] = solx[i];
           }
@@ -684,15 +695,16 @@ int main(int argc, char *argv[]) {
       enorm = (double *)malloc(sizeof(double) * m);
       er = (double *)malloc(sizeof(double) * (m * m));
       eq = (double *)malloc(sizeof(double) * (m * n));
+
+      double *ae, *X, *W, *X2, *Y, temp;
+      ae = (double *)malloc(sizeof(double) * (n * m));
+      X = (double *)malloc(sizeof(double) * (m * m));
+      W = (double *)malloc(m * sizeof(double));
+      X2 = (double *)malloc(sizeof(double) * (m * m));
+      Y = (double *)malloc(m * sizeof(double));
 #pragma omp parallel
       {
-// e = x - x~
-#pragma omp for private(j)
-        for (i = 0; i < m; i++) {
-          for (j = 0; j < n; j++) {
-            _solx[(i * n) + j] = solx[j] - _solx[(i * n) + j];
-          }
-        }
+        calcErrorVectors(n, m, solx, _solx);
 
         /*--- Modified Gram-Schmidt orthogonalization ---*/
         for (i = 0; i < m; i++) {
@@ -711,34 +723,29 @@ int main(int argc, char *argv[]) {
           enorm[i] = sqrt(enorm[i]);
         }
 
-      }  // end of parallel region
-      // TODO: OMP
-      for (i = 0; i < m; i++) {
-        er[i * m + i] = enorm[i];
-        for (j = 0; j < n; j++) {
-          eq[i * n + j] = _solx[i * n + j] / er[i * m + i];
-        }
-        for (j = i + 1; j < m; j++) {
-          for (k = 0; k < n; k++) {
-            er[i * m + j] += eq[i * n + k] * _solx[j * n + k];
+// TODO: OMP
+#pragma omp single
+        {
+          for (i = 0; i < m; i++) {
+            er[i * m + i] = enorm[i];
+            for (j = 0; j < n; j++) {
+              eq[i * n + j] = _solx[i * n + j] / er[i * m + i];
+            }
+            for (j = i + 1; j < m; j++) {
+              for (k = 0; k < n; k++) {
+                er[i * m + j] += eq[i * n + k] * _solx[j * n + k];
+              }
+              for (k = 0; k < n; k++) {
+                _solx[j * n + k] =
+                    _solx[j * n + k] - eq[i * n + k] * er[i * m + j];
+              }
+            }
           }
-          for (k = 0; k < n; k++) {
-            _solx[j * n + k] = _solx[j * n + k] - eq[i * n + k] * er[i * m + j];
-          }
         }
-      }
-      /*--- end Modified Gram-Schmidt orthogonalization ---*/
+        /*--- end Modified Gram-Schmidt orthogonalization ---*/
 
-      /*--- E^T*A*E---*/
-      double *ae, *X, *W, *X2, *Y, temp;
-      ae = (double *)malloc(sizeof(double) * (n * m));
-      X = (double *)malloc(sizeof(double) * (m * m));
-      W = (double *)malloc(m * sizeof(double));
-      X2 = (double *)malloc(sizeof(double) * (m * m));
-      Y = (double *)malloc(m * sizeof(double));
+        /*--- E^T*A*E---*/
 
-#pragma omp parallel
-      {
 #pragma omp for private(j)
         for (i = 0; i < m; i++) {
           for (j = 0; j < n; j++) {
@@ -756,6 +763,7 @@ int main(int argc, char *argv[]) {
           }
         }
       }  // end of the parallel region
+
       // X = eq^T * ae
       cblas_dgemm(CblasColMajor, CblasTrans, CblasNoTrans, m, m, n, 1.0, eq, n,
                   ae, n, 0.0, X, m);
