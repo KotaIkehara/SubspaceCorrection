@@ -29,7 +29,7 @@ void ForwardBackwordSubstitution(int *iuhead, int *iucol, double *u, int n,
     for (i = 0; i < n; i++) {
       for (j = iuhead[i]; j < iuhead[i + 1]; j++) {
         jj = iucol[j];
-        z[jj] += -z[i] * u[j] * diag[i];
+        z[jj] = z[jj] - z[i] * u[j] * diag[i];
       }
     }  // end Forward Substitution
 
@@ -48,53 +48,99 @@ void ForwardBackwordSubstitution(int *iuhead, int *iucol, double *u, int n,
   return;
 }
 
-void mkbu(double *val, int n, int *col_ind, int *row_ptr, double *diag,
-          double *u, int *iuhead, int *iucol, int istart, int iend, int myid,
-          double ganma) {
+void ParallelForwardBackwordSubstitution(int *iuhead, int *iucol, double *u,
+                                         int n, double *diag, double *z,
+                                         double *r, int myid, int istart,
+                                         int iend) {
+  int i, j, jj;
+
+  // Forward Substitution
+#pragma omp for
+  for (i = 0; i < n; i++) {
+    z[i] = r[i];
+  }
+
+#pragma omp single
+  {
+    for (i = 0; i < n; i++) {
+      for (j = iuhead[i]; j < iuhead[i + 1]; j++) {
+        jj = iucol[j];
+        z[jj] = z[jj] - z[i] * u[j] * diag[i];
+      }
+    }  // end Forward Substitution
+
+    // Backward Substitution
+    z[n - 1] = z[n - 1] * diag[n - 1];
+
+    for (i = n - 2; i >= 0; --i) {
+      for (j = iuhead[i]; j < iuhead[i + 1]; j++) {
+        jj = iucol[j];
+        z[i] = z[i] - u[j] * z[jj];
+      }
+      z[i] = z[i] * diag[i];
+    }  // end Backward Substitution
+  }
+
+  // #pragma omp barrier
+
+  return;
+}
+
+void mku(double *val, int n, int *col_ind, int *row_ptr, double *diag,
+         double *u, int *iuhead, int *iucol, int istart, int iend, int myid,
+         double ganma) {
   // Previous version
   int ku, i, j, k, jj;
 
-  iuhead[0] = 1;
-  for (i = 0; i < n; i++) {
-    ku = 0;
-    for (j = row_ptr[i]; j < row_ptr[i + 1]; j++) {
-      jj = col_ind[j];
-      if (jj == i) {
-        diag[i] = val[j] * ganma;
-      } else if (jj > i) {
-        iucol[ku + iuhead[i]] = jj;
-        u[ku + iuhead[i]] = val[j];
-        ku++;
+#pragma omp single
+  {
+    iuhead[0] = 1;
+    for (i = 0; i < n; i++) {
+      ku = 0;
+      for (j = row_ptr[i]; j < row_ptr[i + 1]; j++) {
+        jj = col_ind[j];
+        if (jj == i) {
+          diag[i] = val[j] * ganma;
+        } else if (jj > i) {
+          iucol[ku + iuhead[i]] = jj;
+          u[ku + iuhead[i]] = val[j];
+          ku++;
+        }
+        iuhead[i + 1] = iuhead[i] + ku;
       }
-      iuhead[i + 1] = iuhead[i] + ku;
     }
   }
 
-  //   // Block ICCG version
-  //   int kk, i, j, k, jj, jstart;
+  return;
+}
 
-  //   for (i = istart; i < iend; i++) {
-  //     diag[i] = val[i] * ganma;
-  //   }
+void mkbu(double *val, int n, int *col_ind, int *row_ptr, double *diag,
+          double *u, int *iuhead, int *iucol, int istart, int iend, int myid,
+          double ganma) {
+  int kk, i, j, k, jj, jstart;
 
-  //   kk = 0;
-  //   jstart = row_ptr[istart];
-  //   iuhead[istart] = jstart;
-  //   for (i = istart; i < iend; i++) {
-  //     for (j = row_ptr[i]; j < row_ptr[i + 1]; j++) {
-  //       if (col_ind[j] <= iend) {
-  //         iucol[kk + jstart] = col_ind[j];
-  //         u[kk + jstart] = val[j];
-  //         kk++;
-  //       }
-  //       iuhead[i + 1] = kk + jstart;
-  //     }
-  //   }
+//対角スケーリング済みのため，対角要素は全て1.0となっている
+#pragma omp for
+  for (i = 0; i < n; i++) {
+    diag[i] = 1.0 * ganma;
+  }
 
-  // #pragma omp barrier
-  //   printf("myid: %d, iuhead[istart]: %d, iuhead[iend]: %d", myid,
-  //   iuhead[istart],
-  //          iuhead[iend]);
+  kk = 0;
+  jstart = row_ptr[istart];
+  iuhead[istart] = jstart;
+  for (i = istart; i < iend; i++) {
+    for (j = row_ptr[i]; j < row_ptr[i + 1]; j++) {
+      jj = col_ind[j];
+      if (jj > i && jj < iend) {
+        iucol[kk + jstart] = jj;
+        u[kk + jstart] = val[j];
+        kk++;
+      }
+      iuhead[i + 1] = jstart + kk;
+    }
+  }
+
+#pragma omp barrier
 
   return;
 }
@@ -102,25 +148,28 @@ void mkbu(double *val, int n, int *col_ind, int *row_ptr, double *diag,
 void ic(int n, double *diag, int *iuhead, int *iucol, double *u, int istart,
         int iend, int myid) {
   int i, j, jj, jp, ji, jjp;
-  for (i = 0; i < n; i++) {
-    for (j = iuhead[i]; j < iuhead[i + 1]; j++) {
-      jj = iucol[j];
 
-      diag[iucol[j]] = diag[iucol[j]] - u[j] * u[j] / diag[i];
+#pragma omp single
+  {
+    for (i = 0; i < n; i++) {
+      for (j = iuhead[i]; j < iuhead[i + 1]; j++) {
+        jj = iucol[j];
 
-      for (jp = j + 1; jp < iuhead[i + 1]; jp++) {
-        jjp = iucol[jp];
-        for (ji = iuhead[jj]; ji < iuhead[jj + 1]; ji++) {
-          if (iucol[ji] == jjp) {
-            u[ji] = u[ji] - u[j] * u[jp] / diag[i];
-            // exit??
-            break;
+        diag[jj] = diag[jj] - u[j] * u[j] / diag[i];
+
+        for (jp = j + 1; jp < iuhead[i + 1]; jp++) {
+          jjp = iucol[jp];
+          for (ji = iuhead[jj]; ji < iuhead[jj + 1]; ji++) {
+            if (iucol[ji] == jjp) {
+              u[ji] = u[ji] - u[j] * u[jp] / diag[i];
+              break;
+            }
           }
         }
       }
-    }
-    if (fabs(diag[i]) < 0.001) {
-      break;
+      if (fabs(diag[i]) < 0.001) {
+        break;
+      }
     }
   }
 
@@ -157,6 +206,8 @@ void bic(int n, double *diag, int *iuhead, int *iucol, double *u, int istart,
     }
   }
 
+#pragma omp barrier
+
   return;
 }
 
@@ -169,7 +220,7 @@ int main(int argc, char *argv[]) {
   int *nnonzero_row;
   int n, nnonzero;
   int row, col;
-  double *D;
+  double *ad;
   if (argc != 3) {
     printf("Usage: sample <input_filename> <threshold(1~9)>\n");
     exit(1);
@@ -237,9 +288,9 @@ int main(int argc, char *argv[]) {
         val = (double *)malloc(sizeof(double) * nnonzero);
         col_ind = (int *)malloc(sizeof(int) * nnonzero);
         fill = (int *)malloc(sizeof(int) * (n + 1));
-        D = (double *)malloc(sizeof(double) * n);
+        ad = (double *)malloc(sizeof(double) * n);
         for (i = 0; i < n; i++) {
-          D[i] = 0.0;
+          ad[i] = 0.0;
         }
         for (j = 0; j < nnonzero; j++) {
           val[j] = 0.0;
@@ -264,7 +315,7 @@ int main(int argc, char *argv[]) {
         } else {
           col_ind[row_ptr[row] + fill[row]] = col;
           val[row_ptr[row] + fill[row]] = a;
-          D[row] = sqrt(a);
+          ad[row] = sqrt(a);
           fill[row]++;
         }
       }  // end scan row,col,a
@@ -275,14 +326,13 @@ int main(int argc, char *argv[]) {
   fclose(fp);
 
   // diagonal scaling
-  // D^(-1) * A * D(-1)
-  // TODO: OMP
+  // ad^(-1) * A * ad(-1)
   for (i = 0; i < n; i++) {
     for (j = row_ptr[i]; j < row_ptr[i + 1]; j++) {
-      val[j] = val[j] / (D[i] * D[col_ind[j]]);
+      val[j] = val[j] / (ad[i] * ad[col_ind[j]]);
     }
   }
-  free(D);
+  free(ad);
   // end diagonal scaling
 
   // b: right hand vector
@@ -400,13 +450,13 @@ int main(int argc, char *argv[]) {
           u[i] = 0.0;
         }
 
-#pragma omp single
-        {
-          mkbu(val, n, col_ind, row_ptr, diag, u, iuhead, iucol, istart, iend,
-               myid, ganma);
-          // ic(n, diag, iuhead, iucol, u, istart, iend, myid);
-        }
-        bic(n, diag, iuhead, iucol, u, istart, iend, myid);
+        mkbu(val, n, col_ind, row_ptr, diag, u, iuhead, iucol, istart, iend,
+             myid, ganma);
+        // mku(val, n, col_ind, row_ptr, diag, u, iuhead, iucol, istart,
+        // iend,
+        //     myid, ganma);
+        // bic(n, diag, iuhead, iucol, u, istart, iend, myid);
+        ic(n, diag, iuhead, iucol, u, istart, iend, myid);
 
 #pragma omp for
         for (i = 0; i < n; i++) {
@@ -433,6 +483,7 @@ int main(int argc, char *argv[]) {
       }
 
 // Calc Residual
+// TODO: reduction reduction(+ : ar0)??
 #pragma omp for private(ar0, j, jj)
       for (i = 0; i < n; i++) {
         ar0 = 0.0;
@@ -479,11 +530,25 @@ int main(int argc, char *argv[]) {
     }  // end of the parallel region
 
     for (ite = 1; ite < nitecg; ite++) {
-#pragma omp parallel
+#pragma omp parallel private(myid, istart, iend, interd)
       {
-        ForwardBackwordSubstitution(iuhead, iucol, u, n, diag, z, r, myid,
-                                    istart, iend);
+#pragma omp single
+        { numprocs = omp_get_num_threads(); }
+        myid = omp_get_thread_num();
+#pragma omp barrier
 
+        interd = n / numprocs;
+        istart = interd * myid;
+        iend = interd * (myid + 1);
+        if (myid == numprocs - 1) {
+          iend = n;
+        }
+
+        // ForwardBackwordSubstitution(iuhead, iucol, u, n, diag, z, r,
+        // myid,
+        //                             istart, iend);
+        ParallelForwardBackwordSubstitution(iuhead, iucol, u, n, diag, z, r,
+                                            myid, istart, iend);
         // Ignore IC
         // for (i = 0; i < n; i++)
         // {
