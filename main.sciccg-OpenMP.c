@@ -39,9 +39,9 @@ void ForwardBackwordSubstitution(int *iuhead, int *iucol, double *u, int n,
     for (i = n - 2; i >= 0; --i) {
       for (j = iuhead[i + 1] - 1; j >= iuhead[i]; --j) {
         jj = iucol[j];
-        z[i] += -u[j] * z[jj];
+        z[i] = z[i] - u[j] * z[jj];
       }
-      z[i] *= diag[i];
+      z[i] = z[i] * diag[i];
     }  // end Backward Substitution
   }
 
@@ -210,6 +210,8 @@ void calcResidualVector(int n, int *row_ptr, int *col_ind, double *val,
   int i, j, jj;
   double ar0;
 
+// TODO: private(jj,ar0)?
+// subroutine内のローカル変数のため必要なさそうだけど，後で確かめる
 #pragma omp for
   for (i = 0; i < n; i++) {
     ar0 = 0.0;
@@ -445,6 +447,7 @@ int main(int argc, char *argv[]) {
     }
   }
 
+  // get diagonal of A
   for (i = 0; i < n; i++) {
     for (j = row_ptr[i]; j < row_ptr[i + 1]; j++) {
       jj = col_ind[j];
@@ -453,9 +456,8 @@ int main(int argc, char *argv[]) {
       }
     }
   }
-  // end diagonal scaling
 
-  // b: right hand vector
+  // set right hand vector b
   double *b;
   b = (double *)malloc(sizeof(double) * n);
   for (i = 0; i < n; i++) {
@@ -571,6 +573,7 @@ int main(int argc, char *argv[]) {
              myid, ganma);
         bic(n, diag, iuhead, iucol, u, istart, iend, myid);
         free(ad);
+        // 並列化なしの場合はこちらを使う
         // mku(val, n, col_ind, row_ptr, diag, u, iuhead, iucol, istart,
         // iend, myid, ganma);
         // ic(n, diag, iuhead, iucol, u, istart, iend, myid);
@@ -640,6 +643,7 @@ int main(int argc, char *argv[]) {
         // ForwardBackwordSubstitution(iuhead, iucol, u, n, diag, z, r,
         // myid, istart, iend);
         fbsub(iuhead, iucol, u, n, diag, z, r, myid, istart, iend);
+
         // Ignore IC
         // for (i = 0; i < n; i++)
         // {
@@ -659,11 +663,10 @@ int main(int argc, char *argv[]) {
                            f, m_max);
 
             // Step3. Compute Zc = Z + Bu
-            /***Compute Bu ***/
+            // Compute Bu
             cblas_dgemm(CblasColMajor, CblasNoTrans, CblasNoTrans, n, 1, m_max,
                         1.0, B, n, f, m_max, 0.0, Bu, n);
           }
-
 #pragma omp for
           for (i = 0; i < n; i++) {
             z[i] += Bu[i];
@@ -693,6 +696,7 @@ int main(int argc, char *argv[]) {
             pn[i] = z[i] + beta * p[i];
           }
         }
+
 #pragma omp for
         for (i = 0; i < n; i++) {
           q[i] = 0.0;
@@ -705,21 +709,22 @@ int main(int argc, char *argv[]) {
             q[i] += val[j] * pn[jj];
           }
         }
-// TODO single
+
 #pragma omp single
         { alphat = 0.0; }
 #pragma omp for reduction(+ : alphat)
         for (i = 0; i < n; i++) {
           alphat += pn[i] * q[i];
         }
+
 #pragma omp single
         { alpha = cgrop / alphat; }
-
 #pragma omp for
         for (i = 0; i < n; i++) {
           solx[i] += alpha * pn[i];
           r[i] -= alpha * q[i];
         }
+
 #pragma omp for
         for (i = 0; i < n; i++) {
           p[i] = pn[i];
@@ -727,7 +732,6 @@ int main(int argc, char *argv[]) {
 
 #pragma omp single
         { rnorm = 0.0; }
-
 #pragma omp for reduction(+ : rnorm)
         for (i = 0; i < n; i++) {
           rnorm += fabs(r[i]) * fabs(r[i]);
