@@ -283,7 +283,7 @@ int main(int argc, char *argv[]) {
         col_ind = (int *)malloc(sizeof(int) * nnonzero);
         fill = (int *)malloc(sizeof(int) * (n + 1));
         ad = (double *)malloc(sizeof(double) * n);
-        for (i = 0; i < n; i++) {
+        for (j = 0; j < n; j++) {
           ad[i] = 0.0;
         }
         for (j = 0; j < nnonzero; j++) {
@@ -415,10 +415,11 @@ int main(int argc, char *argv[]) {
     //  for (i = 0; i < n; i++) {
     // b[i] = rand()/(double)RAND_MAX;
     //}
-
-    // t0 = get_time();
+    if (zite == 0) {
+      t0 = get_time();
+    }
     if (zite == 1) {
-      sprintf(sfile, "thermal1_sciccg_zite=%d_th=%d.dat", zite, -threshold);
+      sprintf(sfile, "thermal1.sciccg.zite%d.th%d.dat", zite, -threshold);
       fp = fopen(sfile, "w");
       fprintf(fp, "#ite residual of %s\n", argv[1]);
     }
@@ -454,7 +455,6 @@ int main(int argc, char *argv[]) {
         mkbu(ad, val, n, col_ind, row_ptr, diag, u, iuhead, iucol, istart, iend,
              myid, ganma);
         bic(n, diag, iuhead, iucol, u, istart, iend, myid);
-        free(ad);
         // 並列化なしの場合はこちらを使う
         // mku(val, n, col_ind, row_ptr, diag, u, iuhead, iucol, istart,
         // iend, myid, ganma);
@@ -549,8 +549,7 @@ int main(int argc, char *argv[]) {
         // myid, istart, iend);
         fbsub(iuhead, iucol, u, n, diag, z, r, myid, istart, iend);
         // Ignore IC
-        // for (i = 0; i < n; i++)
-        // {
+        // for (i = 0; i < n; i++) {
         //   z[i] = r[i];
         // }
 
@@ -641,15 +640,18 @@ int main(int argc, char *argv[]) {
           rnorm += fabs(r[i]) * fabs(r[i]);
         }
 
-        //  printf("ite:%d, %lf\n", ite, sqrt(rnorm / bnorm)); //収束判定
+        // printf("ICCG ite:%d, %lf\n", ite, sqrt(rnorm / bnorm));  //収束判定
         if (zite == 1) {
-          fprintf(fp, "%d %lf\n", ite, sqrt(rnorm / bnorm));
+#pragma omp single
+          { fprintf(fp, "%d %lf\n", ite, sqrt(rnorm / bnorm)); }
         }
       }  // end of parallel region
 
       if (sqrt(rnorm / bnorm) < err) {
-        //       t1 = get_time();
-        //       printf("\n--- time: %lf ---\n\n", t1 - t0);
+        if (zite == 0) {
+          t1 = get_time();
+          printf("\nICCG time: %lf\n", t1 - t0);
+        }
         if (zite > 0) total_ite = total_ite + ite;
         break;
       }
@@ -808,8 +810,8 @@ int main(int argc, char *argv[]) {
           break;
         }
       }
-      //    printf("m_max = %d\n", m_max);
-      // printf("# of ite. = %d, %lf\n", ite, sqrt(rnorm / bnorm));
+      printf("m_max = %d\n", m_max);
+      printf("ICCG ite: %d\n\n", ite);
 
       if (m_max != 0) {
         cblas_dgemm(CblasColMajor, CblasNoTrans, CblasNoTrans, n, m_max, m, 1.0,
@@ -829,17 +831,18 @@ int main(int argc, char *argv[]) {
       }
     }
 
-    if (zite == 0) printf("m_max = %d\n", m_max);
+    // if (zite == 0) printf("m_max = %d\n", m_max);
     //   printf("# of ite. = %d, %lf\n", ite, sqrt(rnorm / bnorm));
   }
 
   te = get_time();
-  printf("\n--- time: %lf ---\n\n", te - ts);
-  printf("Total ite: %lf\n", total_ite / 50.0);
+  printf("SC-ICCG time: %lf\n", te - ts);
+  printf("SC-ICCG ite: %lf\n\n", total_ite / 50.0);
   free(B);
   free(f);
   free(ab);
   free(bab);
+  free(ad);
 
   free(row_ptr);
   free(col_ind);
