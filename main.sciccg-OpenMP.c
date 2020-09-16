@@ -39,9 +39,9 @@ void ForwardBackwordSubstitution(int *iuhead, int *iucol, double *u, int n,
     for (i = n - 2; i >= 0; --i) {
       for (j = iuhead[i + 1] - 1; j >= iuhead[i]; --j) {
         jj = iucol[j];
-        z[i] = z[i] - u[j] * z[jj];
+        z[i] += -u[j] * z[jj];
       }
-      z[i] = z[i] * diag[i];
+      z[i] *= diag[i];
     }  // end Backward Substitution
   }
 
@@ -205,126 +205,6 @@ void bic(int n, double *diag, int *iuhead, int *iucol, double *u, int istart,
   return;
 }
 
-void calcResidualVector(int n, int *row_ptr, int *col_ind, double *val,
-                        double *solx, double *r, double *b) {
-  int i, j, jj;
-  double ar0;
-
-// TODO: private(jj,ar0)?
-// subroutine内のローカル変数のため必要なさそうだけど，後で確かめる
-#pragma omp for
-  for (i = 0; i < n; i++) {
-    ar0 = 0.0;
-    for (j = row_ptr[i]; j < row_ptr[i + 1]; j++) {
-      jj = col_ind[j];
-      ar0 += val[j] * solx[jj];
-    }
-    r[i] = b[i] - ar0;
-  }
-
-  return;
-}
-
-void calcErrorVectors(int n, int m, double *solx, double *_solx) {
-  int i, j;
-#pragma omp for private(j)
-  for (i = 0; i < m; i++) {
-    for (j = 0; j < n; j++) {
-      _solx[(i * n) + j] = solx[j] - _solx[(i * n) + j];
-    }
-  }
-
-  return;
-}
-
-void calcAE(int n, int m, int *row_ptr, int *col_ind, double *val, double *ae,
-            double *eq) {
-  int i, j, k, jj;
-
-#pragma omp for private(j)
-  for (i = 0; i < m; i++) {
-    for (j = 0; j < n; j++) {
-      ae[i * n + j] = 0;
-    }
-  }
-
-#pragma omp for private(k, j, jj)
-  for (i = 0; i < m; i++) {
-    for (k = 0; k < n; k++) {
-      for (j = row_ptr[k]; j < row_ptr[k + 1]; j++) {
-        jj = col_ind[j];
-        ae[i * n + k] += val[j] * eq[i * n + jj];
-      }
-    }
-  }
-}
-
-void calcAB(int n, int m, int m_max, int *row_ptr, int *col_ind, double *val,
-            double *B, double *ab) {
-  int i, j, k;
-#pragma omp for private(j)
-  for (i = 0; i < m_max; i++) {
-    for (j = 0; j < n; j++) {
-      ab[i * n + j] = 0.0;
-    }
-  }
-
-#pragma omp for private(j, k)
-  for (i = 0; i < m_max; i++) {
-    for (j = 0; j < n; j++) {
-      for (k = row_ptr[j]; k < row_ptr[j + 1]; k++) {
-        ab[i * n + j] += val[k] * B[i * n + col_ind[k]];
-      }
-    }
-  }
-  return;
-}
-
-void modifiedGramSchmidt(int n, int m, double *enorm, double *er, double *eq,
-                         double *_solx) {
-  int i, j, k;
-
-#pragma omp single
-  {
-    for (i = 0; i < m; i++) {
-      enorm[i] = 0;
-    }
-    for (i = 0; i < m; i++) {
-      for (j = 0; j < m; j++) {
-        er[i * m + j] = 0;
-      }
-    }
-  }
-
-#pragma omp for private(j)
-  for (i = 0; i < m; i++) {
-    for (j = 0; j < n; j++) {
-      enorm[i] += _solx[i * n + j] * _solx[i * n + j];
-    }
-    enorm[i] = sqrt(enorm[i]);
-  }
-
-#pragma omp single
-  {
-    for (i = 0; i < m; i++) {
-      er[i * m + i] = enorm[i];
-      for (j = 0; j < n; j++) {
-        eq[i * n + j] = _solx[i * n + j] / er[i * m + i];
-      }
-      for (j = i + 1; j < m; j++) {
-        for (k = 0; k < n; k++) {
-          er[i * m + j] += eq[i * n + k] * _solx[j * n + k];
-        }
-        for (k = 0; k < n; k++) {
-          _solx[j * n + k] += -eq[i * n + k] * er[i * m + j];
-        }
-      }
-    }
-  }
-
-  return;
-}
-
 int main(int argc, char *argv[]) {
   FILE *fp;
   int *row_ptr, *fill, *col_ind;
@@ -403,8 +283,8 @@ int main(int argc, char *argv[]) {
         col_ind = (int *)malloc(sizeof(int) * nnonzero);
         fill = (int *)malloc(sizeof(int) * (n + 1));
         ad = (double *)malloc(sizeof(double) * n);
-        for (j = 0; j < n; j++) {
-          ad[j] = 0.0;
+        for (i = 0; i < n; i++) {
+          ad[i] = 0.0;
         }
         for (j = 0; j < nnonzero; j++) {
           val[j] = 0.0;
@@ -447,7 +327,6 @@ int main(int argc, char *argv[]) {
     }
   }
 
-  // get diagonal of A
   for (i = 0; i < n; i++) {
     for (j = row_ptr[i]; j < row_ptr[i + 1]; j++) {
       jj = col_ind[j];
@@ -456,8 +335,9 @@ int main(int argc, char *argv[]) {
       }
     }
   }
+  // end diagonal scaling
 
-  // set right hand vector b
+  // b: right hand vector
   double *b;
   b = (double *)malloc(sizeof(double) * n);
   for (i = 0; i < n; i++) {
@@ -488,7 +368,7 @@ int main(int argc, char *argv[]) {
   pn = (double *)malloc(sizeof(double) * n);
   r = (double *)malloc(sizeof(double) * n);
   double cgropp, cgrop;
-  double alpha, alphat, beta;
+  double alpha, alphat, beta, ar0;
   double *diag, *z;
   diag = (double *)malloc(sizeof(double) * n);
   z = (double *)malloc(sizeof(double) * n);
@@ -521,6 +401,7 @@ int main(int argc, char *argv[]) {
 
   lapack_int *pivot;
 
+  double t0, t1;
   double ts, te;
   int total_ite = 0;
 
@@ -535,6 +416,7 @@ int main(int argc, char *argv[]) {
     // b[i] = rand()/(double)RAND_MAX;
     //}
 
+    // t0 = get_time();
     if (zite == 1) {
       sprintf(sfile, "thermal1_sciccg_zite=%d_th=%d.dat", zite, -threshold);
       fp = fopen(sfile, "w");
@@ -601,7 +483,17 @@ int main(int argc, char *argv[]) {
         solx[i] = 0.0;
       }
 
-      calcResidualVector(n, row_ptr, col_ind, val, solx, r, b);
+// Calc Residual
+// TODO: reduction reduction(+ : ar0)??
+#pragma omp for private(ar0, j, jj)
+      for (i = 0; i < n; i++) {
+        ar0 = 0.0;
+        for (j = row_ptr[i]; j < row_ptr[i + 1]; j++) {
+          jj = col_ind[j];
+          ar0 += val[j] * solx[jj];
+        }
+        r[i] = b[i] - ar0;
+      }  // end Calc Residual
 
 #pragma omp single
       {
@@ -612,8 +504,21 @@ int main(int argc, char *argv[]) {
       }
 
       if (zite == 1) {
-        calcAB(n, m, m_max, row_ptr, col_ind, val, B, ab);
+#pragma omp for private(j)
+        for (i = 0; i < m_max; i++) {
+          for (j = 0; j < n; j++) {
+            ab[i * n + j] = 0.0;
+          }
+        }
 
+#pragma omp for private(j, k)
+        for (i = 0; i < m_max; i++) {
+          for (j = 0; j < n; j++) {
+            for (k = row_ptr[j]; k < row_ptr[j + 1]; k++) {
+              ab[i * n + j] += val[k] * B[i * n + col_ind[k]];
+            }
+          }
+        }
 #pragma omp single
         {
           cblas_dgemm(CblasColMajor, CblasTrans, CblasNoTrans, m_max, m_max, n,
@@ -643,7 +548,6 @@ int main(int argc, char *argv[]) {
         // ForwardBackwordSubstitution(iuhead, iucol, u, n, diag, z, r,
         // myid, istart, iend);
         fbsub(iuhead, iucol, u, n, diag, z, r, myid, istart, iend);
-
         // Ignore IC
         // for (i = 0; i < n; i++)
         // {
@@ -663,10 +567,11 @@ int main(int argc, char *argv[]) {
                            f, m_max);
 
             // Step3. Compute Zc = Z + Bu
-            // Compute Bu
+            /***Compute Bu ***/
             cblas_dgemm(CblasColMajor, CblasNoTrans, CblasNoTrans, n, 1, m_max,
                         1.0, B, n, f, m_max, 0.0, Bu, n);
           }
+
 #pragma omp for
           for (i = 0; i < n; i++) {
             z[i] += Bu[i];
@@ -696,7 +601,6 @@ int main(int argc, char *argv[]) {
             pn[i] = z[i] + beta * p[i];
           }
         }
-
 #pragma omp for
         for (i = 0; i < n; i++) {
           q[i] = 0.0;
@@ -709,22 +613,21 @@ int main(int argc, char *argv[]) {
             q[i] += val[j] * pn[jj];
           }
         }
-
+// TODO single
 #pragma omp single
         { alphat = 0.0; }
 #pragma omp for reduction(+ : alphat)
         for (i = 0; i < n; i++) {
           alphat += pn[i] * q[i];
         }
-
 #pragma omp single
         { alpha = cgrop / alphat; }
+
 #pragma omp for
         for (i = 0; i < n; i++) {
           solx[i] += alpha * pn[i];
           r[i] -= alpha * q[i];
         }
-
 #pragma omp for
         for (i = 0; i < n; i++) {
           p[i] = pn[i];
@@ -732,6 +635,7 @@ int main(int argc, char *argv[]) {
 
 #pragma omp single
         { rnorm = 0.0; }
+
 #pragma omp for reduction(+ : rnorm)
         for (i = 0; i < n; i++) {
           rnorm += fabs(r[i]) * fabs(r[i]);
@@ -739,12 +643,13 @@ int main(int argc, char *argv[]) {
 
         //  printf("ite:%d, %lf\n", ite, sqrt(rnorm / bnorm)); //収束判定
         if (zite == 1) {
-#pragma omp single
-          { fprintf(fp, "%d %lf\n", ite, sqrt(rnorm / bnorm)); }
+          fprintf(fp, "%d %lf\n", ite, sqrt(rnorm / bnorm));
         }
       }  // end of parallel region
 
       if (sqrt(rnorm / bnorm) < err) {
+        //       t1 = get_time();
+        //       printf("\n--- time: %lf ---\n\n", t1 - t0);
         if (zite > 0) total_ite = total_ite + ite;
         break;
       }
@@ -757,6 +662,7 @@ int main(int argc, char *argv[]) {
             it = it + pow(-1, l) * floor((ite - 1) / pow(m, l));
           }
           j = it % m;
+#pragma omp parallel for
           for (i = 0; i < n; i++) {
             _solx[j * n + i] = solx[i];
           }
@@ -774,7 +680,52 @@ int main(int argc, char *argv[]) {
       enorm = (double *)malloc(sizeof(double) * m);
       er = (double *)malloc(sizeof(double) * (m * m));
       eq = (double *)malloc(sizeof(double) * (m * n));
+#pragma omp parallel
+      {
+// e = x - x~
+#pragma omp for private(j)
+        for (i = 0; i < m; i++) {
+          for (j = 0; j < n; j++) {
+            _solx[(i * n) + j] = solx[j] - _solx[(i * n) + j];
+          }
+        }
 
+        /*--- Modified Gram-Schmidt orthogonalization ---*/
+        for (i = 0; i < m; i++) {
+          enorm[i] = 0;
+        }
+        for (i = 0; i < m; i++) {
+          for (j = 0; j < m; j++) {
+            er[i * m + j] = 0;
+          }
+        }
+#pragma omp for private(j)
+        for (i = 0; i < m; i++) {
+          for (j = 0; j < n; j++) {
+            enorm[i] += _solx[i * n + j] * _solx[i * n + j];
+          }
+          enorm[i] = sqrt(enorm[i]);
+        }
+
+      }  // end of parallel region
+      // TODO: OMP
+      for (i = 0; i < m; i++) {
+        er[i * m + i] = enorm[i];
+        for (j = 0; j < n; j++) {
+          eq[i * n + j] = _solx[i * n + j] / er[i * m + i];
+        }
+        for (j = i + 1; j < m; j++) {
+          for (k = 0; k < n; k++) {
+            er[i * m + j] += eq[i * n + k] * _solx[j * n + k];
+          }
+          for (k = 0; k < n; k++) {
+            _solx[j * n + k] = _solx[j * n + k] - eq[i * n + k] * er[i * m + j];
+          }
+        }
+      }
+      /*--- end Modified Gram-Schmidt orthogonalization ---*/
+
+      /*--- E^T*A*E---*/
       double *ae, *X, *W, *X2, *Y, temp;
       ae = (double *)malloc(sizeof(double) * (n * m));
       X = (double *)malloc(sizeof(double) * (m * m));
@@ -784,14 +735,23 @@ int main(int argc, char *argv[]) {
 
 #pragma omp parallel
       {
-        calcErrorVectors(n, m, solx, _solx);
+#pragma omp for private(j)
+        for (i = 0; i < m; i++) {
+          for (j = 0; j < n; j++) {
+            ae[i * n + j] = 0;
+          }
+        }
 
-        modifiedGramSchmidt(n, m, enorm, er, eq, _solx);
-
-        calcAE(n, m, row_ptr, col_ind, val, ae, eq);
-
+#pragma omp for private(k, j, jj)
+        for (i = 0; i < m; i++) {
+          for (k = 0; k < n; k++) {
+            for (j = row_ptr[k]; j < row_ptr[k + 1]; j++) {
+              jj = col_ind[j];
+              ae[i * n + k] += val[j] * eq[i * n + jj];
+            }
+          }
+        }
       }  // end of the parallel region
-
       // X = eq^T * ae
       cblas_dgemm(CblasColMajor, CblasTrans, CblasNoTrans, m, m, n, 1.0, eq, n,
                   ae, n, 0.0, X, m);
@@ -876,7 +836,6 @@ int main(int argc, char *argv[]) {
   te = get_time();
   printf("\n--- time: %lf ---\n\n", te - ts);
   printf("Total ite: %lf\n", total_ite / 50.0);
-
   free(B);
   free(f);
   free(ab);
