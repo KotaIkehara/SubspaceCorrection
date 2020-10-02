@@ -81,22 +81,23 @@ void fbsub(int *iuhead, int *iucol, double *u, int n, double *diag, double *z,
   return;
 }
 
-void mku(double *val, int n, int *col_ind, int *row_ptr, double *diag,
-         double *u, int *iuhead, int *iucol, int istart, int iend, int myid,
-         double ganma) {
-  // Previous version
+void mku(double *ad, double *val, int n, int *col_ind, int *row_ptr,
+         double *diag, double *u, int *iuhead, int *iucol, int istart, int iend,
+         int myid, double ganma) {
   int ku, i, j, k, jj;
 
 #pragma omp single
   {
-    iuhead[0] = 1;
+    for (i = 0; i < n; i++) {
+      diag[i] = ad[j] * ganma;
+    }
+
+    iuhead[0] = 0;
     for (i = 0; i < n; i++) {
       ku = 0;
       for (j = row_ptr[i]; j < row_ptr[i + 1]; j++) {
         jj = col_ind[j];
-        if (jj == i) {
-          diag[i] = val[j] * ganma;
-        } else if (jj > i) {
+        if (jj > i) {
           iucol[ku + iuhead[i]] = jj;
           u[ku + iuhead[i]] = val[j];
           ku++;
@@ -111,16 +112,33 @@ void mku(double *val, int n, int *col_ind, int *row_ptr, double *diag,
 
 void mkbu(double *ad, double *val, int n, int *col_ind, int *row_ptr,
           double *diag, double *u, int *iuhead, int *iucol, int istart,
-          int iend, int myid, double ganma) {
-  int kk, i, j, k, jj, jstart;
+          int iend, int myid, double ganma, int *unnonzero, int procs) {
+  int kk, ku, i, j, jj, jstart;
 
 #pragma omp for
   for (i = 0; i < n; i++) {
     diag[i] = ad[i] * ganma;
   }
 
+  for (i = istart; i < iend; i++) {
+    for (j = row_ptr[i]; j < row_ptr[i + 1]; j++) {
+      jj = col_ind[j];
+      if (jj > i && jj < iend) {
+        unnonzero[myid + 1]++;
+      }
+    }
+  }
+#pragma omp barrier
+
+#pragma omp single
+  {
+    for (i = 1; i < procs + 1; i++) {
+      unnonzero[i] = unnonzero[i] + unnonzero[i - 1];
+    }
+  }
+
   kk = 0;
-  jstart = row_ptr[istart];
+  jstart = unnonzero[myid];
   iuhead[istart] = jstart;
   for (i = istart; i < iend; i++) {
     for (j = row_ptr[i]; j < row_ptr[i + 1]; j++) {
@@ -130,11 +148,14 @@ void mkbu(double *ad, double *val, int n, int *col_ind, int *row_ptr,
         u[kk + jstart] = val[j];
         kk++;
       }
-      iuhead[i + 1] = jstart + kk;
     }
+    iuhead[i + 1] = kk + jstart;
   }
 
 #pragma omp barrier
+
+#pragma omp single
+  { free(unnonzero); }
 
   return;
 }
@@ -162,6 +183,7 @@ void ic(int n, double *diag, int *iuhead, int *iucol, double *u, int istart,
         }
       }
       if (fabs(diag[i]) < 0.001) {
+        printf("diag error: i:%d, diag[i]:%lf\n", i, diag[i]);
         break;
       }
     }
@@ -173,30 +195,28 @@ void ic(int n, double *diag, int *iuhead, int *iucol, double *u, int istart,
 void bic(int n, double *diag, int *iuhead, int *iucol, double *u, int istart,
          int iend, int myid) {
   int i, j, jj, jp, ji, jjp;
-  int ielocal = 0;
 
   for (i = istart; i < iend; i++) {
-    if (ielocal == 0) {
-      for (j = iuhead[i]; j < iuhead[i + 1]; j++) {
-        jj = iucol[j];
-        diag[jj] = diag[jj] - u[j] * u[j] / diag[i];
+    for (j = iuhead[i]; j < iuhead[i + 1]; j++) {
+      jj = iucol[j];
 
-        if (fabs(diag[jj]) < 0.001) {
-          ielocal = 101;
-        }
+      diag[jj] = diag[jj] - u[j] * u[j] / diag[i];
 
-        for (jp = iuhead[i]; jp < iuhead[i + 1]; jp++) {
-          jjp = iucol[jp];
-          if (jjp > jj) {
-            for (ji = iuhead[jj]; ji < iuhead[jj + 1]; ji++) {
-              if (iucol[ji] == jjp) {
-                u[ji] = u[ji] - u[j] * u[jp] / diag[i];
-                break;
-              }
+      for (jp = j + 1; jp < iuhead[i + 1]; jp++) {
+        jjp = iucol[jp];
+        if (jjp > jj) {
+          for (ji = iuhead[jj]; ji < iuhead[jj + 1]; ji++) {
+            if (iucol[ji] == jjp) {
+              u[ji] = u[ji] - u[j] * u[jp] / diag[i];
+              break;
             }
           }
         }
       }
+    }
+
+    if (fabs(diag[i]) < 0.001) {
+      break;
     }
   }
 
@@ -215,6 +235,7 @@ int main(int argc, char *argv[]) {
   int n, nnonzero;
   int row, col;
   double *ad;
+
   if (argc != 3) {
     printf("Usage: sample <input_filename> <threshold(1~9)>\n");
     exit(1);
@@ -238,7 +259,6 @@ int main(int argc, char *argv[]) {
         for (j = 0; j < n; j++) {
           nnonzero_row[j] = 0;
         }
-        //        nnonzero++;
         nnonzero = 1;  // Iwashita revise
       } else {
         sscanf(tmp, "%d %d %lf", &row, &col, &a);
@@ -283,15 +303,15 @@ int main(int argc, char *argv[]) {
         col_ind = (int *)malloc(sizeof(int) * nnonzero);
         fill = (int *)malloc(sizeof(int) * (n + 1));
         ad = (double *)malloc(sizeof(double) * n);
-        for (j = 0; j < n; j++) {
-          ad[i] = 0.0;
-        }
         for (j = 0; j < nnonzero; j++) {
           val[j] = 0.0;
           col_ind[j] = 0;
         }
         for (j = 0; j < n + 1; j++) {
           fill[j] = 0;
+        }
+        for (j = 0; j < n; j++) {
+          ad[i] = 0.0;
         }
         i++;
       } else {
@@ -345,10 +365,6 @@ int main(int argc, char *argv[]) {
   }
 
   srand(1);
-
-  //  for (i = 0; i < n; i++) {
-  //  b[i] = rand()/(double)RAND_MAX;
-  //}
 
   // ICCG
   int nitecg = 5000;
@@ -406,22 +422,20 @@ int main(int argc, char *argv[]) {
   int total_ite = 0;
 
   int threshold = -atoi(argv[2]);
+  int procs = omp_get_max_threads();
+  int *unnonzero;
+  unnonzero = (int *)malloc(sizeof(int) * (procs + 1));
 
   for (zite = 0; zite < 51; zite++) {
     if (zite == 1) {
-      ts = get_time();
-    }
-
-    //  for (i = 0; i < n; i++) {
-    // b[i] = rand()/(double)RAND_MAX;
-    //}
-    if (zite == 0) {
-      t0 = get_time();
-    }
-    if (zite == 1) {
-      sprintf(sfile, "thermal1.sciccg.zite%d.th%d.dat", zite, -threshold);
+      sprintf(sfile, "thermal1.sciccg.zite%d.theta%d.thread%d.dat", zite,
+              -threshold, procs);
       fp = fopen(sfile, "w");
       fprintf(fp, "#ite residual of %s\n", argv[1]);
+      printf("Threshold: 10^(%d) Thread: %d\n", threshold, procs);
+    }
+    if (zite == 0) {
+      t0 = get_time();
     }
 
 #pragma omp parallel private(myid, istart, iend, interd)
@@ -444,6 +458,9 @@ int main(int argc, char *argv[]) {
 #pragma omp for
         for (i = 0; i < n; i++) {
           diag[i] = 0.0;
+        }
+#pragma omp for
+        for (i = 0; i < n + 1; i++) {
           iuhead[i] = 0;
         }
 #pragma omp for
@@ -451,19 +468,30 @@ int main(int argc, char *argv[]) {
           iucol[i] = 0;
           u[i] = 0.0;
         }
+#pragma omp single
+        {
+          for (i = 0; i < procs + 1; i++) {
+            unnonzero[i] = 0;
+          }
+        }
 
         mkbu(ad, val, n, col_ind, row_ptr, diag, u, iuhead, iucol, istart, iend,
-             myid, ganma);
+             myid, ganma, unnonzero, procs);
         bic(n, diag, iuhead, iucol, u, istart, iend, myid);
         // 並列化なしの場合はこちらを使う
-        // mku(val, n, col_ind, row_ptr, diag, u, iuhead, iucol, istart,
-        // iend, myid, ganma);
+        // mku(ad, val, n, col_ind, row_ptr, diag, u, iuhead, iucol, istart,
+        // iend,
+        //     myid, ganma);
         // ic(n, diag, iuhead, iucol, u, istart, iend, myid);
 
 #pragma omp for
         for (i = 0; i < n; i++) {
           diag[i] = 1.0 / diag[i];
         }
+      }
+
+      if (zite == 1) {
+        ts = get_time();
       }
 
 #pragma omp single
@@ -545,8 +573,10 @@ int main(int argc, char *argv[]) {
           iend = n;
         }
 
-        // ForwardBackwordSubstitution(iuhead, iucol, u, n, diag, z, r,
-        // myid, istart, iend);
+        //逐次版:
+        // ForwardBackwordSubstitution(iuhead, iucol, u, n, diag, z, r, myid,
+        //                             istart, iend);
+        //並列版:
         fbsub(iuhead, iucol, u, n, diag, z, r, myid, istart, iend);
         // Ignore IC
         // for (i = 0; i < n; i++) {
@@ -612,7 +642,7 @@ int main(int argc, char *argv[]) {
             q[i] += val[j] * pn[jj];
           }
         }
-// TODO single
+
 #pragma omp single
         { alphat = 0.0; }
 #pragma omp for reduction(+ : alphat)
@@ -651,6 +681,7 @@ int main(int argc, char *argv[]) {
         if (zite == 0) {
           t1 = get_time();
           printf("\nICCG time: %lf\n", t1 - t0);
+          printf("ICCG ite: %d\n\n", ite);
         }
         if (zite > 0) total_ite = total_ite + ite;
         break;
@@ -811,7 +842,7 @@ int main(int argc, char *argv[]) {
         }
       }
       printf("m_max = %d\n", m_max);
-      printf("ICCG ite: %d\n\n", ite);
+      // printf("ICCG ite: %d\n\n", ite);
 
       if (m_max != 0) {
         cblas_dgemm(CblasColMajor, CblasNoTrans, CblasNoTrans, n, m_max, m, 1.0,
@@ -829,14 +860,14 @@ int main(int argc, char *argv[]) {
       if (zite == 1) {
         fclose(fp);
       }
-    }
+    }  // end if zite==0
 
     // if (zite == 0) printf("m_max = %d\n", m_max);
     //   printf("# of ite. = %d, %lf\n", ite, sqrt(rnorm / bnorm));
   }
 
   te = get_time();
-  printf("SC-ICCG time: %lf\n", te - ts);
+  printf("SC-ICCG time: %lf\n", (te - ts) / 50.0);
   printf("SC-ICCG ite: %lf\n\n", total_ite / 50.0);
   free(B);
   free(f);
