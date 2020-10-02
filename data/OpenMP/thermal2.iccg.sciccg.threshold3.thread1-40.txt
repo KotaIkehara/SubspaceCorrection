@@ -1,0 +1,70 @@
+mtx/thermal2.mtx
+n:1228045 nnonzero:8580313
+
+ICCG time: 128.105259
+m_max = 20
+ICCG ite: 2100
+
+SC-ICCG time: 3943.553698
+SC-ICCG ite: 857.640000
+
+mtx/thermal2.mtx
+n:1228045 nnonzero:8580313
+
+ICCG time: 4008.424552
+m_max = 20
+ICCG ite: 2731
+
+SC-ICCG time: 2858.449144
+SC-ICCG ite: 1000.780000
+
+mtx/thermal2.mtx
+n:1228045 nnonzero:8580313
+
+ICCG time: 1052.105874
+m_max = 20
+ICCG ite: 2886
+
+SC-ICCG time: 1789.439823
+SC-ICCG ite: 1043.640000
+
+mtx/thermal2.mtx
+n:1228045 nnonzero:8580313
+
+ICCG time: 302.475942
+m_max = 20
+ICCG ite: 3017
+
+SC-ICCG time: 1059.566934
+SC-ICCG ite: 1057.960000
+
+mtx/thermal2.mtx
+n:1228045 nnonzero:8580313
+
+ICCG time: 97.336230
+m_max = 20
+ICCG ite: 3050
+
+SC-ICCG time: 702.862511
+SC-ICCG ite: 1118.200000
+
+mtx/thermal2.mtx
+n:1228045 nnonzero:8580313
+
+ICCG time: 47.132648
+m_max = 20
+ICCG ite: 3229
+
+SC-ICCG time: 590.793143
+SC-ICCG ite: 1167.660000
+
+mtx/thermal2.mtx
+n:1228045 nnonzero:8580313
+
+ICCG time: 37.844590
+m_max = 20
+ICCG ite: 3252
+
+SC-ICCG time: 675.295505
+SC-ICCG ite: 1209.140000
+
