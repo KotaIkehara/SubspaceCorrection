@@ -426,9 +426,12 @@ int main(int argc, char *argv[]) {
   int *unnonzero;
   unnonzero = (int *)malloc(sizeof(int) * (procs + 1));
 
+  char mtxname[256];
+  strcpy(mtxname, argv[1] + 4);
+
   for (zite = 0; zite < 51; zite++) {
     if (zite == 1) {
-      sprintf(sfile, "thermal1.sciccg.zite%d.theta%d.thread%d.dat", zite,
+      sprintf(sfile, "%s.sciccg.zite%d.theta%d.thread%d.dat", mtxname, zite,
               -threshold, procs);
       fp = fopen(sfile, "w");
       fprintf(fp, "#ite residual of %s\n", argv[1]);
