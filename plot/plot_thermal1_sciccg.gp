@@ -16,7 +16,4 @@ set ylabel 'Relative residual norm'
 set logscale y
 set format y " 10^{%T}"
 
-plot     "../data/thermal1/IC2/thermal1_zite=0_th=1.dat" using 1:2 with line @dt1 title 'ICCG'
-replot   "../data/thermal1/IC2/thermal1_zite=1_th=1.dat" using 1:2 with line @dt2 title 'SC-ICCG({/Symbol a}=1, 2, 3)'
-replot   "../data/thermal1/IC2/thermal1_zite=1_th=4.dat" using 1:2 with line @dt3 title 'SC-ICCG({/Symbol a}=4)'
-replot   "../data/thermal1/IC2/thermal1_zite=1_th=5.dat" using 1:2 with line @dt4 title 'SC-ICCG({/Symbol a}=5)'
+plot     "../Hook_1498.mtx.iccg.zite1.theta3.0.thread1.dat" using 1:2 with line @dt1 title 'theta3'
