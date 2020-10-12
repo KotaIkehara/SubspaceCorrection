@@ -838,6 +838,10 @@ int main(int argc, char *argv[]) {
       /*--- end E^T*A*E---*/
       double theta = pow(10, threshold);
 
+      if (W[0] > theta) {
+        printf("error: m_max = 0. Threshold is too small.");
+        exit(1);
+      }
       for (i = 0; i < m; i++) {
         if (W[i] <= theta) {
           m_max = i + 1;
