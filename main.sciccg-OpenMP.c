@@ -184,7 +184,7 @@ void ic(int n, double *diag, int *iuhead, int *iucol, double *u, int istart,
       }
       if (fabs(diag[i]) < 0.001) {
         printf("diag error: i:%d, diag[i]:%lf\n", i, diag[i]);
-        break;
+        exit(1);
       }
     }
   }
@@ -216,7 +216,8 @@ void bic(int n, double *diag, int *iuhead, int *iucol, double *u, int istart,
     }
 
     if (fabs(diag[i]) < 0.001) {
-      break;
+      printf("diag error: i:%d, diag[i]:%lf\n", i, diag[i]);
+      exit(1);
     }
   }
 
@@ -371,7 +372,7 @@ int main(int argc, char *argv[]) {
   double *solx;
   solx = (double *)malloc(sizeof(double) * n);
 
-  double err = 1.0e-7;
+  double err = 1.0e-8;
   int *iuhead, *iucol;
   iuhead = (int *)malloc(sizeof(int) * (n + 1));
   iucol = (int *)malloc(sizeof(int) * nnonzero);
@@ -392,7 +393,7 @@ int main(int argc, char *argv[]) {
   double ganma, rnorm, bnorm;
   int ite;
   // convergence check
-  int h = 1, it, l, lmax, m = 20;
+  int h = 1, it, l, lmax, m = 30;
   double *_solx;
   _solx = (double *)malloc(sizeof(double) * (n * m));
   lmax = ceil(log(nitecg) / log(m));
@@ -421,18 +422,21 @@ int main(int argc, char *argv[]) {
   double ts, te;
   int total_ite = 0;
 
-  int threshold = -atoi(argv[2]);
+  double threshold = -atof(argv[2]);
   int procs = omp_get_max_threads();
   int *unnonzero;
   unnonzero = (int *)malloc(sizeof(int) * (procs + 1));
 
-  for (zite = 0; zite < 51; zite++) {
+  char mtxname[256];
+  strcpy(mtxname, argv[1] + 4);
+
+  for (zite = 0; zite < 6; zite++) {
     if (zite == 1) {
-      sprintf(sfile, "thermal1.sciccg.zite%d.theta%d.thread%d.dat", zite,
+      sprintf(sfile, "%s.sciccg.zite%d.theta%d.thread%.1f.dat", mtxname, zite,
               -threshold, procs);
       fp = fopen(sfile, "w");
       fprintf(fp, "#ite residual of %s\n", argv[1]);
-      printf("Threshold: 10^(%d) Thread: %d\n", threshold, procs);
+      printf("Threshold: 10^(%.1f) Thread: %d\n", threshold, procs);
     }
     if (zite == 0) {
       t0 = get_time();
@@ -834,6 +838,10 @@ int main(int argc, char *argv[]) {
       /*--- end E^T*A*E---*/
       double theta = pow(10, threshold);
 
+      if (W[0] > theta) {
+        printf("error: m_max = 0. Threshold is too small.");
+        exit(1);
+      }
       for (i = 0; i < m; i++) {
         if (W[i] <= theta) {
           m_max = i + 1;
@@ -867,8 +875,8 @@ int main(int argc, char *argv[]) {
   }
 
   te = get_time();
-  printf("SC-ICCG time: %lf\n", (te - ts) / 50.0);
-  printf("SC-ICCG ite: %lf\n\n", total_ite / 50.0);
+  printf("SC-ICCG time: %lf\n", (te - ts) / 5.0);
+  printf("SC-ICCG ite: %lf\n\n", total_ite / 5.0);
   free(B);
   free(f);
   free(ab);
