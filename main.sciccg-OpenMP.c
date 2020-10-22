@@ -83,13 +83,13 @@ void fbsub(int *iuhead, int *iucol, double *u, int n, double *diag, double *z,
 
 void mku(double *ad, double *val, int n, int *col_ind, int *row_ptr,
          double *diag, double *u, int *iuhead, int *iucol, int istart, int iend,
-         int myid, double ganma) {
+         int myid, double gamma) {
   int ku, i, j, k, jj;
 
 #pragma omp single
   {
     for (i = 0; i < n; i++) {
-      diag[i] = ad[j] * ganma;
+      diag[i] = ad[j] * gamma;
     }
 
     iuhead[0] = 0;
@@ -112,12 +112,12 @@ void mku(double *ad, double *val, int n, int *col_ind, int *row_ptr,
 
 void mkbu(double *ad, double *val, int n, int *col_ind, int *row_ptr,
           double *diag, double *u, int *iuhead, int *iucol, int istart,
-          int iend, int myid, double ganma, int *unnonzero, int procs) {
+          int iend, int myid, double gamma, int *unnonzero, int procs) {
   int kk, ku, i, j, jj, jstart;
 
 #pragma omp for
   for (i = 0; i < n; i++) {
-    diag[i] = ad[i] * ganma;
+    diag[i] = ad[i] * gamma;
   }
 
   for (i = istart; i < iend; i++) {
@@ -237,8 +237,8 @@ int main(int argc, char *argv[]) {
   int row, col;
   double *ad;
 
-  if (argc != 3) {
-    printf("Usage: sample <input_filename> <threshold(1~9)>\n");
+  if (argc != 4) {
+    printf("Usage: sample <input_filename> <threshold(1~9)> <m_max>\n");
     exit(1);
   }
   if ((fp = fopen(argv[1], "r")) == NULL) {
@@ -390,10 +390,11 @@ int main(int argc, char *argv[]) {
   diag = (double *)malloc(sizeof(double) * n);
   z = (double *)malloc(sizeof(double) * n);
 
-  double ganma, rnorm, bnorm;
+  double gamma, rnorm, bnorm;
   int ite;
   // convergence check
-  int h = 1, it, l, lmax, m = 30;
+  int h = 1, it, l, lmax;
+  int m = atoi(argv[3]);
   double *_solx;
   _solx = (double *)malloc(sizeof(double) * (n * m));
   lmax = ceil(log(nitecg) / log(m));
@@ -432,7 +433,7 @@ int main(int argc, char *argv[]) {
 
   for (zite = 0; zite < 6; zite++) {
     if (zite == 1) {
-      sprintf(sfile, "%s.sciccg.zite%d.theta%d.thread%.1f.dat", mtxname, zite,
+      sprintf(sfile, "%s.sciccg.zite%d.theta%.1f.thread%d.dat", mtxname, zite,
               -threshold, procs);
       fp = fopen(sfile, "w");
       fprintf(fp, "#ite residual of %s\n", argv[1]);
@@ -458,7 +459,7 @@ int main(int argc, char *argv[]) {
 
       if (zite == 0) {
 #pragma omp single
-        { ganma = 1.0; }
+        { gamma = 1.1; }
 #pragma omp for
         for (i = 0; i < n; i++) {
           diag[i] = 0.0;
@@ -480,12 +481,12 @@ int main(int argc, char *argv[]) {
         }
 
         mkbu(ad, val, n, col_ind, row_ptr, diag, u, iuhead, iucol, istart, iend,
-             myid, ganma, unnonzero, procs);
+             myid, gamma, unnonzero, procs);
         bic(n, diag, iuhead, iucol, u, istart, iend, myid);
         // 並列化なしの場合はこちらを使う
         // mku(ad, val, n, col_ind, row_ptr, diag, u, iuhead, iucol, istart,
         // iend,
-        //     myid, ganma);
+        //     myid, gamma);
         // ic(n, diag, iuhead, iucol, u, istart, iend, myid);
 
 #pragma omp for
@@ -502,7 +503,7 @@ int main(int argc, char *argv[]) {
       {
         bnorm = 0.0;
         for (i = 0; i < n; i++) {
-          b[i] = rand() / (double)RAND_MAX;
+          // b[i] = rand() / (double)RAND_MAX;
           // if (zite == 0) b[i]=1.0;
           // b[i] = 1.0;
           bnorm += fabs(b[i]) * fabs(b[i]);
@@ -577,10 +578,6 @@ int main(int argc, char *argv[]) {
           iend = n;
         }
 
-        //逐次版:
-        // ForwardBackwordSubstitution(iuhead, iucol, u, n, diag, z, r, myid,
-        //                             istart, iend);
-        //並列版:
         fbsub(iuhead, iucol, u, n, diag, z, r, myid, istart, iend);
         // Ignore IC
         // for (i = 0; i < n; i++) {
