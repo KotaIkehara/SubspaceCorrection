@@ -1,0 +1,28 @@
+matrix name
+n: xxxxxxxx Nonzeros: xxxxxxxx
+m_max: xx
+b: random/1
+
+theta: 10^(x)
+time: xxx
+ite: xxx
+
+theta: 10^(x)
+time: xxx
+ite: xxx
+
+theta: 10^(x)
+time: xxx
+ite: xxx
+
+theta: 10^(x)
+time: xxx
+ite: xxx
+
+theta: 10^(x)
+time: xxx
+ite: xxx
+
+theta: 10^(x)
+time: xxx
+ite: xxx
