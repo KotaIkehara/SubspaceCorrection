@@ -1,3 +1,4 @@
+#include <mkl.h>
 #include <omp.h>
 #include <stdio.h>
 
@@ -6,7 +7,8 @@ int main(int argc, char **argv) {
   m = atoi(argv[1]);
   n = atoi(argv[2]);
 
-  int i, j;
+  int ite, i, j;
+  double k;
   int myid, numprocs, interd, istart, iend;
   numprocs = omp_get_max_threads();
 
@@ -17,7 +19,6 @@ int main(int argc, char **argv) {
   W = (double *)malloc((m * numprocs) * sizeof(double));
 
   double ts, te;
-
   for (i = 0; i < m; i++) {
     for (j = 0; j < n; j++) {
       V1[i * n + j] = 1.0;
@@ -38,34 +39,65 @@ int main(int argc, char **argv) {
   ts = omp_get_wtime();
 #pragma omp parallel private(myid, istart, iend, interd)
   {
-#pragma omp single
-    { numprocs = omp_get_num_threads(); }
-    myid = omp_get_thread_num();
-#pragma omp barrier
+    // Method 1
+    // #pragma omp single
+    //     { numprocs = omp_get_num_threads(); }
+    //     myid = omp_get_thread_num();
+    // #pragma omp barrier
 
-    interd = n / numprocs;
-    istart = interd * myid;
-    iend = interd * (myid + 1);
-    if (myid == numprocs - 1) {
-      iend = n;
-    }
+    //     interd = n / numprocs;
+    //     istart = interd * myid;
+    //     iend = interd * (myid + 1);
+    //     if (myid == numprocs - 1) {
+    //       iend = n;
+    //     }
 
+    //     for (i = 0; i < m; i++) {
+    //       for (j = istart; j < iend; j++) {
+    //         W[myid * m + i] += V1[i * n + j] * V2[j];
+    //       }
+    //     }
+    // #pragma omp barrier
+    //   }
+
+    //   for (i = 0; i < m; i++) {
+    //     for (j = 0; j < omp_get_max_threads(); j++) {
+    //       X[i] += W[j * m + i];
+    //     }
+
+    // Method 2
+    // #pragma omp for
+    //       for (i = 0; i < m; i++) {
+    //         for (j = 0; j < n; j++) {
+    //           X[i] += V1[i * n + j] * V2[j];
+    //         }
+    //       }
+    //     }
+
+    // Method 3
     for (i = 0; i < m; i++) {
-      for (j = istart; j < iend; j++) {
-        W[myid * m + i] += V1[i * n + j] * V2[j];
-      }
-    }
+      k = 0.0;
+#pragma omp single
+      { printf("%lf\n", k); }
 #pragma omp barrier
+#pragma omp for reduction(+ : k)
+      for (j = 0; j < n; j++) {
+        k += V1[i * n + j] * V2[j];
+      }
+      X[i] = k;
+#pragma omp single
+      { printf("%lf", X[i]); }
+#pragma omp barrier
+    }
   }
 
-  for (i = 0; i < m; i++) {
-    for (j = 0; j < omp_get_max_threads(); j++) {
-      X[i] += W[j * m + i];
-    }
-  }
-  for (i = 0; i < m; i++) {
-    printf("%lf\n", X[i]);
-  }
+  // Method 3
+  // cblas_dgemv(CblasColMajor, CblasTrans, n, m, 1.0, V1, n, V2, 1, 0.0, X,
+  // 1);
+
+  // for (i = 0; i < m; i++) {
+  //   printf("%lf\n", X[i]);
+  // }
 
   te = omp_get_wtime();
   printf("%lf\n", te - ts);
