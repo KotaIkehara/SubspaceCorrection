@@ -497,33 +497,33 @@ int main(int argc, char *argv[]) {
           //             }
           //           }
 
-// #pragma omp for
-//           for (i = 0; i < m_max; i++) {
-//             for (j = 0; j < numprocs; j++) {
-//               V[i + j * m_max] = 0.0;
-//             }
-//           }
+#pragma omp for
+          for (i = 0; i < m_max; i++) {
+            for (j = 0; j < numprocs; j++) {
+              V[i + j * m_max] = 0.0;
+            }
+          }
 
-//           for (i = 0; i < m_max; i++) {
-//             for (j = istart; j < iend; j++) {
-//               V[myid * m_max + i] += B[i * n + j] * r[j];
-//             }
-//           }
-// #pragma omp barrier
+          for (i = 0; i < m_max; i++) {
+            for (j = istart; j < iend; j++) {
+              V[myid * m_max + i] += B[i * n + j] * r[j];
+            }
+          }
+#pragma omp barrier
 
 // Step2. Solve (B^TAB)u = f: forward/backward substitution
 #pragma omp single
           {
-            // for (i = 0; i < m_max; i++) {
-            //   for (j = 0; j < numprocs; j++) {
-            //     f[i] += V[j * m_max + i];
-            //   }
-            // }
+            for (i = 0; i < m_max; i++) {
+              for (j = 0; j < numprocs; j++) {
+                f[i] += V[j * m_max + i];
+              }
+            }
             // Step1. Compute f = B^T * r
             // cblas_dgemm(CblasColMajor, CblasTrans, CblasNoTrans, m_max, 1, n,
             //             1.0, B, n, r, n, 0.0, f, m_max);
-            cblas_dgemv(CblasColMajor, CblasTrans, n, m_max, 1.0, B, n, r, 1,
-                        0.0, f, 1);
+            // cblas_dgemv(CblasColMajor, CblasTrans, n, m_max, 1.0, B, n, r, 1,
+            //             0.0, f, 1);
             // Step2. Solve (B^TAB)u = f
             // forward/backward substitution
             LAPACKE_dgetrs(LAPACK_COL_MAJOR, 'N', m_max, 1, bab, m_max, pivot,

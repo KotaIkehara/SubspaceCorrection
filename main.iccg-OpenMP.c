@@ -83,13 +83,13 @@ void fbsub(int *iuhead, int *iucol, double *u, int n, double *diag, double *z,
 
 void mku(double *ad, double *val, int n, int *col_ind, int *row_ptr,
          double *diag, double *u, int *iuhead, int *iucol, int istart, int iend,
-         int myid, double ganma) {
+         int myid, double gamma) {
   int ku, i, j, k, jj;
 
 #pragma omp single
   {
     for (i = 0; i < n; i++) {
-      diag[i] = ad[j] * ganma;
+      diag[i] = ad[j] * gamma;
     }
 
     iuhead[0] = 0;
@@ -112,12 +112,12 @@ void mku(double *ad, double *val, int n, int *col_ind, int *row_ptr,
 
 void mkbu(double *ad, double *val, int n, int *col_ind, int *row_ptr,
           double *diag, double *u, int *iuhead, int *iucol, int istart,
-          int iend, int myid, double ganma, int *unnonzero, int procs) {
+          int iend, int myid, double gamma, int *unnonzero, int procs) {
   int kk, ku, i, j, jj, jstart;
 
 #pragma omp for
   for (i = 0; i < n; i++) {
-    diag[i] = ad[i] * ganma;
+    diag[i] = ad[i] * gamma;
   }
 
   for (i = istart; i < iend; i++) {
@@ -390,10 +390,10 @@ int main(int argc, char *argv[]) {
   diag = (double *)malloc(sizeof(double) * n);
   z = (double *)malloc(sizeof(double) * n);
 
-  double ganma, rnorm, bnorm;
+  double gamma, rnorm, bnorm;
   int ite;
   // convergence check
-  int h = 1, it, l, lmax, m = 300;
+  int h = 1, it, l, lmax, m = 30;
   double *_solx;
   _solx = (double *)malloc(sizeof(double) * (n * m));
   lmax = ceil(log(nitecg) / log(m));
@@ -458,7 +458,7 @@ int main(int argc, char *argv[]) {
 
       if (zite == 0) {
 #pragma omp single
-        { ganma = 1.0; }
+        { gamma = 1.1; }
 #pragma omp for
         for (i = 0; i < n; i++) {
           diag[i] = 0.0;
@@ -480,13 +480,8 @@ int main(int argc, char *argv[]) {
         }
 
         mkbu(ad, val, n, col_ind, row_ptr, diag, u, iuhead, iucol, istart, iend,
-             myid, ganma, unnonzero, procs);
+             myid, gamma, unnonzero, procs);
         bic(n, diag, iuhead, iucol, u, istart, iend, myid);
-        // 並列化なしの場合はこちらを使う
-        // mku(ad, val, n, col_ind, row_ptr, diag, u, iuhead, iucol, istart,
-        // iend,
-        //     myid, ganma);
-        // ic(n, diag, iuhead, iucol, u, istart, iend, myid);
 
 #pragma omp for
         for (i = 0; i < n; i++) {
@@ -502,7 +497,7 @@ int main(int argc, char *argv[]) {
       {
         bnorm = 0.0;
         for (i = 0; i < n; i++) {
-          b[i] = rand() / (double)RAND_MAX;
+          // b[i] = rand() / (double)RAND_MAX;
           // if (zite == 0) b[i]=1.0;
           // b[i] = 1.0;
           bnorm += fabs(b[i]) * fabs(b[i]);
@@ -577,42 +572,11 @@ int main(int argc, char *argv[]) {
           iend = n;
         }
 
-        //逐次版:
-        // ForwardBackwordSubstitution(iuhead, iucol, u, n, diag, z, r, myid,
-        //                             istart, iend);
-        //並列版:
         fbsub(iuhead, iucol, u, n, diag, z, r, myid, istart, iend);
         // Ignore IC
         // for (i = 0; i < n; i++) {
         //   z[i] = r[i];
         // }
-
-        // Subspace Correction (SC)
-        //         if (zite > 0) {
-        // #pragma omp single
-        //           {
-        //             // Step1. Compute f = B^T * r
-        //             cblas_dgemm(CblasColMajor, CblasTrans, CblasNoTrans,
-        //             m_max, 1, n,
-        //                         1.0, B, n, r, n, 0.0, f, m_max);
-        //             // Step2. Solve (B^TAB)u = f
-        //             // forward/backward substitution
-        //             LAPACKE_dgetrs(LAPACK_COL_MAJOR, 'N', m_max, 1, bab,
-        //             m_max, pivot,
-        //                            f, m_max);
-
-        //             // Step3. Compute Zc = Z + Bu
-        //             /***Compute Bu ***/
-        //             cblas_dgemm(CblasColMajor, CblasNoTrans, CblasNoTrans, n,
-        //             1, m_max,
-        //                         1.0, B, n, f, m_max, 0.0, Bu, n);
-        //           }
-
-        // #pragma omp for
-        //           for (i = 0; i < n; i++) {
-        //             z[i] += Bu[i];
-        //           }
-        //         }  // end SC
 
 #pragma omp single
         {
@@ -693,189 +657,7 @@ int main(int argc, char *argv[]) {
         if (zite > 0) total_ite = total_ite + ite;
         break;
       }
-
-      //       if (zite == 0) {
-      //         /*--- Selection of Approximate Solution Vectors ---*/
-      //         if (ite % h == 0) {
-      //           it = 0;
-      //           for (l = 0; l < lmax; l++) {
-      //             it = it + pow(-1, l) * floor((ite - 1) / pow(m, l));
-      //           }
-      //           j = it % m;
-      // #pragma omp parallel for
-      //           for (i = 0; i < n; i++) {
-      //             _solx[j * n + i] = solx[i];
-      //           }
-      //           if (ite == h * m) {
-      //             h = h * 2;
-      //           }
-      //         }
-      //         /*--- end Selection of Approximate Solution Vectors ---*/
-      //       }
-
     }  // end ICCG
-
-    //     if (zite == 0) {
-    //       double *enorm, *er, *eq;
-    //       enorm = (double *)malloc(sizeof(double) * m);
-    //       er = (double *)malloc(sizeof(double) * (m * m));
-    //       eq = (double *)malloc(sizeof(double) * (m * n));
-    // #pragma omp parallel
-    //       {
-    // // e = x - x~
-    // #pragma omp for private(j)
-    //         for (i = 0; i < m; i++) {
-    //           for (j = 0; j < n; j++) {
-    //             _solx[(i * n) + j] = solx[j] - _solx[(i * n) + j];
-    //           }
-    //         }
-
-    //         /*--- Modified Gram-Schmidt orthogonalization ---*/
-    //         for (i = 0; i < m; i++) {
-    //           enorm[i] = 0;
-    //         }
-    //         for (i = 0; i < m; i++) {
-    //           for (j = 0; j < m; j++) {
-    //             er[i * m + j] = 0;
-    //           }
-    //         }
-    // #pragma omp for private(j)
-    //         for (i = 0; i < m; i++) {
-    //           for (j = 0; j < n; j++) {
-    //             enorm[i] += _solx[i * n + j] * _solx[i * n + j];
-    //           }
-    //           enorm[i] = sqrt(enorm[i]);
-    //         }
-
-    //       }  // end of parallel region
-    //       // TODO: OMP
-    //       for (i = 0; i < m; i++) {
-    //         er[i * m + i] = enorm[i];
-    //         for (j = 0; j < n; j++) {
-    //           eq[i * n + j] = _solx[i * n + j] / er[i * m + i];
-    //         }
-    //         for (j = i + 1; j < m; j++) {
-    //           for (k = 0; k < n; k++) {
-    //             er[i * m + j] += eq[i * n + k] * _solx[j * n + k];
-    //           }
-    //           for (k = 0; k < n; k++) {
-    //             _solx[j * n + k] = _solx[j * n + k] - eq[i * n + k] * er[i *
-    //             m + j];
-    //           }
-    //         }
-    //       }
-    //       /*--- end Modified Gram-Schmidt orthogonalization ---*/
-
-    //       /*--- E^T*A*E---*/
-    //       double *ae, *X, *W, *X2, *Y, temp;
-    //       ae = (double *)malloc(sizeof(double) * (n * m));
-    //       X = (double *)malloc(sizeof(double) * (m * m));
-    //       W = (double *)malloc(m * sizeof(double));
-    //       X2 = (double *)malloc(sizeof(double) * (m * m));
-    //       Y = (double *)malloc(m * sizeof(double));
-
-    // #pragma omp parallel
-    //       {
-    // #pragma omp for private(j)
-    //         for (i = 0; i < m; i++) {
-    //           for (j = 0; j < n; j++) {
-    //             ae[i * n + j] = 0;
-    //           }
-    //         }
-
-    // #pragma omp for private(k, j, jj)
-    //         for (i = 0; i < m; i++) {
-    //           for (k = 0; k < n; k++) {
-    //             for (j = row_ptr[k]; j < row_ptr[k + 1]; j++) {
-    //               jj = col_ind[j];
-    //               ae[i * n + k] += val[j] * eq[i * n + jj];
-    //             }
-    //           }
-    //         }
-    //       }  // end of the parallel region
-    //       // X = eq^T * ae
-    //       cblas_dgemm(CblasColMajor, CblasTrans, CblasNoTrans, m, m, n, 1.0,
-    //       eq, n,
-    //                   ae, n, 0.0, X, m);
-
-    //       // E^T*ae
-    //       for (i = 0; i < m * m; i++) {
-    //         X2[i] = X[i];
-    //       }
-
-    //       // compute eigenvalues and eigenvectors of X
-    //       info = LAPACKE_dsyev(LAPACK_COL_MAJOR, 'V', 'U', m, X, m, W);
-    //       if (info != 0) {
-    //         printf("info = %d\n", info);  // error check
-    //       } else {
-    //         // check the result
-    //         // printf("-- check the residual of each eigenpair --\n");
-    //         for (k = 0; k < m; k++) {
-    //           for (i = 0; i < m; i++) {
-    //             Y[i] = 0.0;
-    //             for (j = 0; j < m; j++) {
-    //               Y[i] += X2[j * m + i] * X[k * m + j];
-    //             }
-    //           }
-    //           temp = 0.0;
-    //           for (i = 0; i < m; i++) {
-    //             temp +=
-    //                 (Y[i] - (W[k] * X[k * m + i])) * (Y[i] - (W[k] * X[k * m
-    //                 + i]));
-    //           }
-    //           temp = sqrt(temp);
-
-    //           // printf("[%3d] eigenvalue = %8.3e, || Ax - wx ||_2 =
-    //           %8.3e\n", k +
-    //           // 1, W[k], temp);
-    //         }
-
-    //         // printf("-- check the orthogonality of eigenvectors --\n");
-    //         for (k = 0; k < m; k++) {
-    //           for (j = k; j < m; j++) {
-    //             temp = 0.0;
-    //             for (i = 0; i < m; i++) {
-    //               temp += X[k * m + i] * X[j * m + i];
-    //             }
-    //             temp;
-    //             // printf("x[%3d]^T x[%3d] = %8.3e\n", k + 1, j + 1, temp);
-    //           }
-    //         }
-    //       }
-    //       /*--- end E^T*A*E---*/
-    //       double theta = pow(10, threshold);
-
-    //       for (i = 0; i < m; i++) {
-    //         if (W[i] <= theta) {
-    //           m_max = i + 1;
-    //         } else {
-    //           break;
-    //         }
-    //       }
-    //       printf("m_max = %d\n", m_max);
-    //       // printf("ICCG ite: %d\n\n", ite);
-
-    //       if (m_max != 0) {
-    //         cblas_dgemm(CblasColMajor, CblasNoTrans, CblasNoTrans, n, m_max,
-    //         m, 1.0,
-    //                     eq, n, X, m, 0.0, B, n);
-
-    //         free(enorm);
-    //         free(er);
-    //         free(eq);
-    //         free(ae);
-    //         free(X);
-    //         free(W);
-    //         free(X2);
-    //         free(Y);
-    //       }
-    //       if (zite == 1) {
-    //         fclose(fp);
-    //       }
-    //     }  // end if zite==0
-
-    // if (zite == 0) printf("m_max = %d\n", m_max);
-    //   printf("# of ite. = %d, %lf\n", ite, sqrt(rnorm / bnorm));
   }
 
   te = get_time();

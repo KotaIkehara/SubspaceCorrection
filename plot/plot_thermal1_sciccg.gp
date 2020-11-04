@@ -16,4 +16,7 @@ set ylabel 'Relative residual norm'
 set logscale y
 set format y " 10^{%T}"
 
-plot     "../Hook_1498.mtx.iccg.zite1.theta3.0.thread1.dat" using 1:2 with line @dt1 title 'theta3'
+plot     "../data/OpenMP/m=30b=rand/Flan_1565/Flan_1565.mtx.iccg.zite1.theta6.0.thread1.dat" using 1:2 with line @dt1 title 'theta3'
+replot     "../data/OpenMP/m=30b=rand/Flan_1565/Flan_1565.mtx.sciccg.zite1.theta1.thread3.0.dat" using 1:2 with line @dt1 title 'theta3'
+replot     "../data/OpenMP/m=30b=rand/Flan_1565/Flan_1565.mtx.sciccg.zite1.theta1.thread4.0.dat" using 1:2 with line @dt1 title 'theta3'
+replot     "../data/OpenMP/m=30b=rand/Flan_1565/Flan_1565.mtx.sciccg.zite1.theta1.thread5.0.dat" using 1:2 with line @dt1 title 'theta3'
