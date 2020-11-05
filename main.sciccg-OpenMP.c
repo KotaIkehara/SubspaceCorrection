@@ -14,12 +14,12 @@ double get_time() {
 }
 
 // ad^(-1) * A * ad(-1)
-void diagscaling(int n, int *row_ptr, int *col_ind, double *val, double *ad) {
+void diagscaling(int n, int *row_ptr, int *col_ind, double *A, double *ad) {
   int i, j, jj;
 
   for (i = 0; i < n; i++) {
     for (j = row_ptr[i]; j < row_ptr[i + 1]; j++) {
-      val[j] = val[j] / (ad[i] * ad[col_ind[j]]);
+      A[j] = A[j] / (ad[i] * ad[col_ind[j]]);
     }
   }
 
@@ -27,7 +27,7 @@ void diagscaling(int n, int *row_ptr, int *col_ind, double *val, double *ad) {
     for (j = row_ptr[i]; j < row_ptr[i + 1]; j++) {
       jj = col_ind[j];
       if (jj == i) {
-        ad[i] = val[j];
+        ad[i] = A[j];
       }
     }
   }
@@ -67,7 +67,7 @@ void fbsub(int *iuhead, int *iucol, double *u, int n, double *diag, double *z,
   return;
 }
 
-void mkbu(double *ad, double *val, int n, int *col_ind, int *row_ptr,
+void mkbu(double *ad, double *A, int n, int *col_ind, int *row_ptr,
           double *diag, double *u, int *iuhead, int *iucol, int istart,
           int iend, int myid, double gamma, int *unnonzero, int procs) {
   int kk, i, j, jj, jstart;
@@ -102,7 +102,7 @@ void mkbu(double *ad, double *val, int n, int *col_ind, int *row_ptr,
       jj = col_ind[j];
       if (jj > i && jj < iend) {
         iucol[kk + jstart] = jj;
-        u[kk + jstart] = val[j];
+        u[kk + jstart] = A[j];
         kk++;
       }
     }
@@ -209,9 +209,9 @@ void mkz(int n, int m_max, double *Bu, double *B, double *f, double *z) {
 int main(int argc, char *argv[]) {
   FILE *fp;
   int *row_ptr, *fill, *col_ind;
-  double *val, a;
+  double *A, val;
   char tmp[256];
-  int i, j, k, jj;
+  int i, j, k;
   int *nnonzero_row;
   int n, nnonzero;
   int row, col;
@@ -241,7 +241,7 @@ int main(int argc, char *argv[]) {
         }
         nnonzero = 1;
       } else {
-        sscanf(tmp, "%d %d %lf", &row, &col, &a);
+        sscanf(tmp, "%d %d %lf", &row, &col, &val);
         if (row == col) {
           nnonzero_row[row - 1]++;
           nnonzero++;
@@ -266,7 +266,7 @@ int main(int argc, char *argv[]) {
 
   // next scan
   if ((fp = fopen(argv[1], "r")) == NULL) {
-    printf("file open error!\n");
+    printf("File open error!\n");
     exit(1);
   }
 
@@ -279,12 +279,12 @@ int main(int argc, char *argv[]) {
       if (i == 0) {
         sscanf(tmp, "%d %d %d", &n, &n, &j);
         printf("n:%d nnonzero:%d\n", n, nnonzero);
-        val = (double *)malloc(sizeof(double) * nnonzero);
+        A = (double *)malloc(sizeof(double) * nnonzero);
         col_ind = (int *)malloc(sizeof(int) * nnonzero);
         fill = (int *)malloc(sizeof(int) * (n + 1));
         ad = (double *)malloc(sizeof(double) * n);
         for (j = 0; j < nnonzero; j++) {
-          val[j] = 0.0;
+          A[j] = 0.0;
           col_ind[j] = 0;
         }
         for (j = 0; j < n + 1; j++) {
@@ -295,31 +295,31 @@ int main(int argc, char *argv[]) {
         }
         i++;
       } else {
-        sscanf(tmp, "%d %d %lf", &row, &col, &a);
+        sscanf(tmp, "%d %d %lf", &row, &col, &val);
         row--;
         col--;
         if (row != col) {
           col_ind[row_ptr[col] + fill[col]] = row;
-          val[row_ptr[col] + fill[col]] = a;
+          A[row_ptr[col] + fill[col]] = val;
           fill[col]++;
 
           col_ind[row_ptr[row] + fill[row]] = col;
-          val[row_ptr[row] + fill[row]] = a;
+          A[row_ptr[row] + fill[row]] = val;
           fill[row]++;
         } else {
           col_ind[row_ptr[row] + fill[row]] = col;
-          val[row_ptr[row] + fill[row]] = a;
-          ad[row] = sqrt(a);
+          A[row_ptr[row] + fill[row]] = val;
+          ad[row] = sqrt(val);
           fill[row]++;
         }
-      }  // end scan row,col,a
+      }  // end scan row,col,val
     }    // tmp[0] != %
   }      // end while
 
   free(fill);
   fclose(fp);
 
-  diagscaling(n, row_ptr, col_ind, val, ad);
+  diagscaling(n, row_ptr, col_ind, A, ad);
 
   // b: right hand vector
   double *b;
@@ -356,8 +356,8 @@ int main(int argc, char *argv[]) {
 
   int h = 1, it, l, lmax;
   int m = atoi(argv[3]);
-  double *_solx;
-  _solx = (double *)malloc(sizeof(double) * (n * m));
+  double *E;
+  E = (double *)malloc(sizeof(double) * (n * m));
   lmax = ceil(log(nitecg) / log(m));
 
   int zite;
@@ -443,7 +443,7 @@ int main(int argc, char *argv[]) {
           }
         }
 
-        mkbu(ad, val, n, col_ind, row_ptr, diag, u, iuhead, iucol, istart, iend,
+        mkbu(ad, A, n, col_ind, row_ptr, diag, u, iuhead, iucol, istart, iend,
              myid, gamma, unnonzero, procs);
         bic(n, diag, iuhead, iucol, u, istart, iend);
 
@@ -472,12 +472,11 @@ int main(int argc, char *argv[]) {
       }
 
 // Calc Residual
-#pragma omp for private(ar0, j, jj)
+#pragma omp for private(ar0, j)
       for (i = 0; i < n; i++) {
         ar0 = 0.0;
         for (j = row_ptr[i]; j < row_ptr[i + 1]; j++) {
-          jj = col_ind[j];
-          ar0 += val[j] * solx[jj];
+          ar0 += A[j] * solx[col_ind[j]];
         }
         r[i] = b[i] - ar0;
       }  // end Calc Residual
@@ -502,7 +501,7 @@ int main(int argc, char *argv[]) {
         for (i = 0; i < m_max; i++) {
           for (j = 0; j < n; j++) {
             for (k = row_ptr[j]; k < row_ptr[j + 1]; k++) {
-              ab[i * n + j] += val[k] * B[i * n + col_ind[k]];
+              ab[i * n + j] += A[k] * B[i * n + col_ind[k]];
             }
           }
         }
@@ -590,11 +589,10 @@ int main(int argc, char *argv[]) {
         for (i = 0; i < n; i++) {
           q[i] = 0.0;
         }
-#pragma omp for private(j, jj)
+#pragma omp for private(j)
         for (i = 0; i < n; i++) {
           for (j = row_ptr[i]; j < row_ptr[i + 1]; j++) {
-            jj = col_ind[j];
-            q[i] += val[j] * pn[jj];
+            q[i] += A[j] * pn[col_ind[j]];
           }
         }
 
@@ -651,7 +649,7 @@ int main(int argc, char *argv[]) {
           j = it % m;
 #pragma omp parallel for
           for (i = 0; i < n; i++) {
-            _solx[j * n + i] = solx[i];
+            E[j * n + i] = solx[i];
           }
           if (ite == h * m) {
             h = h * 2;
@@ -673,7 +671,7 @@ int main(int argc, char *argv[]) {
 #pragma omp for private(j)
         for (i = 0; i < m; i++) {
           for (j = 0; j < n; j++) {
-            _solx[(i * n) + j] = solx[j] - _solx[(i * n) + j];
+            E[(i * n) + j] = solx[j] - E[(i * n) + j];
           }
         }
 
@@ -689,24 +687,24 @@ int main(int argc, char *argv[]) {
 #pragma omp for private(j)
         for (i = 0; i < m; i++) {
           for (j = 0; j < n; j++) {
-            enorm[i] += _solx[i * n + j] * _solx[i * n + j];
+            enorm[i] += E[i * n + j] * E[i * n + j];
           }
           enorm[i] = sqrt(enorm[i]);
         }
 
       }  // end of parallel region
-      // TODO: OMP
+
       for (i = 0; i < m; i++) {
         er[i * m + i] = enorm[i];
         for (j = 0; j < n; j++) {
-          eq[i * n + j] = _solx[i * n + j] / er[i * m + i];
+          eq[i * n + j] = E[i * n + j] / er[i * m + i];
         }
         for (j = i + 1; j < m; j++) {
           for (k = 0; k < n; k++) {
-            er[i * m + j] += eq[i * n + k] * _solx[j * n + k];
+            er[i * m + j] += eq[i * n + k] * E[j * n + k];
           }
           for (k = 0; k < n; k++) {
-            _solx[j * n + k] = _solx[j * n + k] - eq[i * n + k] * er[i * m + j];
+            E[j * n + k] = E[j * n + k] - eq[i * n + k] * er[i * m + j];
           }
         }
       }
@@ -729,12 +727,11 @@ int main(int argc, char *argv[]) {
           }
         }
 
-#pragma omp for private(k, j, jj)
+#pragma omp for private(k, j)
         for (i = 0; i < m; i++) {
           for (k = 0; k < n; k++) {
             for (j = row_ptr[k]; j < row_ptr[k + 1]; j++) {
-              jj = col_ind[j];
-              ae[i * n + k] += val[j] * eq[i * n + jj];
+              ae[i * n + k] += A[j] * eq[i * n + col_ind[j]];
             }
           }
         }
@@ -832,7 +829,7 @@ int main(int argc, char *argv[]) {
 
   free(row_ptr);
   free(col_ind);
-  free(val);
+  free(A);
   free(solx);
   free(b);
   free(iuhead);
@@ -845,5 +842,5 @@ int main(int argc, char *argv[]) {
   free(diag);
   free(z);
   free(Bu);
-  free(_solx);
+  free(E);
 }
