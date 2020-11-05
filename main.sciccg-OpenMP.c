@@ -13,6 +13,27 @@ double get_time() {
   return tv.tv_sec + (double)tv.tv_usec * 1e-6;
 }
 
+// ad^(-1) * A * ad(-1)
+void diagscaling(int n, int *row_ptr, int *col_ind, double *val, double *ad) {
+  int i, j, jj;
+
+  for (i = 0; i < n; i++) {
+    for (j = row_ptr[i]; j < row_ptr[i + 1]; j++) {
+      val[j] = val[j] / (ad[i] * ad[col_ind[j]]);
+    }
+  }
+
+  for (i = 0; i < n; i++) {
+    for (j = row_ptr[i]; j < row_ptr[i + 1]; j++) {
+      jj = col_ind[j];
+      if (jj == i) {
+        ad[i] = val[j];
+      }
+    }
+  }
+  return;
+}
+
 void fbsub(int *iuhead, int *iucol, double *u, int n, double *diag, double *z,
            double *r, int istart, int iend) {
   int i, j, jj;
@@ -130,6 +151,61 @@ void bic(int n, double *diag, int *iuhead, int *iucol, double *u, int istart,
   return;
 }
 
+void mkbtr(int n, int m_max, int numprocs, int istart, int iend, int myid,
+           double *f, double *V, double *B, double *r) {
+  int i, j;
+
+#pragma omp for
+  for (i = 0; i < m_max; i++) {
+    f[i] = 0.0;
+  }
+#pragma omp for
+  for (i = 0; i < m_max; i++) {
+    for (j = 0; j < numprocs; j++) {
+      V[i + j * m_max] = 0.0;
+    }
+  }
+  for (i = 0; i < m_max; i++) {
+    for (j = istart; j < iend; j++) {
+      V[myid * m_max + i] += B[i * n + j] * r[j];
+    }
+  }
+#pragma omp barrier
+
+#pragma omp single
+  {
+    for (i = 0; i < m_max; i++) {
+      for (j = 0; j < numprocs; j++) {
+        f[i] += V[j * m_max + i];
+      }
+    }
+  }
+  return;
+}
+
+void mkz(int n, int m_max, double *Bu, double *B, double *f, double *z) {
+  int i, j;
+
+#pragma omp for
+  for (i = 0; i < n; i++) {
+    Bu[i] = 0.0;
+  }
+
+#pragma omp for
+  for (i = 0; i < n; i++) {
+    for (j = 0; j < m_max; j++) {
+      Bu[i] += B[j * n + i] * f[j];
+    }
+  }
+
+#pragma omp for
+  for (i = 0; i < n; i++) {
+    z[i] += Bu[i];
+  }
+
+  return;
+}
+
 int main(int argc, char *argv[]) {
   FILE *fp;
   int *row_ptr, *fill, *col_ind;
@@ -149,7 +225,6 @@ int main(int argc, char *argv[]) {
     printf("File open error!\n");
     exit(1);
   }
-
   printf("%s\n", argv[1]);
 
   nnonzero = 0;
@@ -244,22 +319,7 @@ int main(int argc, char *argv[]) {
   free(fill);
   fclose(fp);
 
-  // diagonal scaling: ad^(-1) * A * ad(-1)
-  for (i = 0; i < n; i++) {
-    for (j = row_ptr[i]; j < row_ptr[i + 1]; j++) {
-      val[j] = val[j] / (ad[i] * ad[col_ind[j]]);
-    }
-  }
-
-  for (i = 0; i < n; i++) {
-    for (j = row_ptr[i]; j < row_ptr[i + 1]; j++) {
-      jj = col_ind[j];
-      if (jj == i) {
-        ad[i] = val[j];
-      }
-    }
-  }
-  // end diagonal scaling
+  diagscaling(n, row_ptr, col_ind, val, ad);
 
   // b: right hand vector
   double *b;
@@ -293,7 +353,7 @@ int main(int argc, char *argv[]) {
 
   double gamma, rnorm, bnorm;
   int ite;
-  // convergence check
+
   int h = 1, it, l, lmax;
   int m = atoi(argv[3]);
   double *_solx;
@@ -314,8 +374,7 @@ int main(int argc, char *argv[]) {
   ab = (double *)malloc(sizeof(double) * n * m_max);
   bab = (double *)malloc(sizeof(double) * m_max * m_max);
 
-  int interd, inum;
-  int istart, iend;
+  int interd, istart, iend;
   int numprocs, myid;
 
   lapack_int *pivot;
@@ -489,73 +548,17 @@ int main(int argc, char *argv[]) {
 
         // Subspace Correction
         if (zite > 0) {
-// Step1. Compute f = B^T * r
-#pragma omp for
-          for (i = 0; i < m_max; i++) {
-            f[i] = 0.0;
-          }
+          // Step1. Compute f = B^T * r
+          mkbtr(n, m_max, numprocs, istart, iend, myid, f, V, B, r);
 
-          // #pragma omp for
-          //           for (i = 0; i < m_max; i++) {
-          //             for (j = 0; j < n; j++) {
-          //               f[i] += B[i * n + j] * r[j];
-          //             }
-          //           }
-
-#pragma omp for
-          for (i = 0; i < m_max; i++) {
-            for (j = 0; j < numprocs; j++) {
-              V[i + j * m_max] = 0.0;
-            }
-          }
-
-          for (i = 0; i < m_max; i++) {
-            for (j = istart; j < iend; j++) {
-              V[myid * m_max + i] += B[i * n + j] * r[j];
-            }
-          }
-#pragma omp barrier
-
-// Step2. Solve (B^TAB)u = f: forward/backward substitution
+          // Step2. Solve (B^TAB)u = f:  forward/backward substitution
 #pragma omp single
           {
-            for (i = 0; i < m_max; i++) {
-              for (j = 0; j < numprocs; j++) {
-                f[i] += V[j * m_max + i];
-              }
-            }
-            // Step1. Compute f = B^T * r
-            // cblas_dgemm(CblasColMajor, CblasTrans, CblasNoTrans, m_max, 1, n,
-            //             1.0, B, n, r, n, 0.0, f, m_max);
-            // cblas_dgemv(CblasColMajor, CblasTrans, n, m_max, 1.0, B, n, r, 1,
-            //             0.0, f, 1);
-            // Step2. Solve (B^TAB)u = f
-            // forward/backward substitution
             LAPACKE_dgetrs(LAPACK_COL_MAJOR, 'N', m_max, 1, bab, m_max, pivot,
                            f, m_max);
-
-            // Step3. Compute Zc = Z + Bu
-            /***Compute Bu ***/
-            // cblas_dgemm(CblasColMajor, CblasNoTrans, CblasNoTrans, n, 1,
-            // m_max,
-            //             1.0, B, n, f, m_max, 0.0, Bu, n);
           }
-
-// Step3. Compute Zc = Z + Bu
-#pragma omp for
-          for (i = 0; i < n; i++) {
-            Bu[i] = 0.0;
-          }
-#pragma omp for
-          for (i = 0; i < n; i++) {
-            for (j = 0; j < m_max; j++) {
-              Bu[i] += B[j * n + i] * f[j];
-            }
-          }
-#pragma omp for
-          for (i = 0; i < n; i++) {
-            z[i] += Bu[i];
-          }
+          // Step3. Compute Zc = Z + Bu
+          mkz(n, m_max, Bu, B, f, z);
 
         }  // end Subspace Correction
 
@@ -666,7 +669,7 @@ int main(int argc, char *argv[]) {
       eq = (double *)malloc(sizeof(double) * (m * n));
 #pragma omp parallel
       {
-// e = x - x~
+        // e = x - x~
 #pragma omp for private(j)
         for (i = 0; i < m; i++) {
           for (j = 0; j < n; j++) {
@@ -722,7 +725,7 @@ int main(int argc, char *argv[]) {
 #pragma omp for private(j)
         for (i = 0; i < m; i++) {
           for (j = 0; j < n; j++) {
-            ae[i * n + j] = 0;
+            ae[i * n + j] = 0.0;
           }
         }
 
@@ -736,11 +739,11 @@ int main(int argc, char *argv[]) {
           }
         }
       }  // end of the parallel region
+
       // X = eq^T * ae
       cblas_dgemm(CblasColMajor, CblasTrans, CblasNoTrans, m, m, n, 1.0, eq, n,
                   ae, n, 0.0, X, m);
 
-      // E^T*ae
       for (i = 0; i < m * m; i++) {
         X2[i] = X[i];
       }
@@ -777,7 +780,7 @@ int main(int argc, char *argv[]) {
             for (i = 0; i < m; i++) {
               temp += X[k * m + i] * X[j * m + i];
             }
-            temp;
+            // temp;
             // printf("x[%3d]^T x[%3d] = %8.3e\n", k + 1, j + 1, temp);
           }
         }
