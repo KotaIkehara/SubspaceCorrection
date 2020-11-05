@@ -267,10 +267,8 @@ int main(int argc, char *argv[]) {
   for (i = 0; i < n; i++) {
     b[i] = 1.0;
   }
-
   srand(1);
 
-  // ICCG
   int nitecg = 5000;
   double *solx;
   solx = (double *)malloc(sizeof(double) * n);
@@ -409,7 +407,6 @@ int main(int argc, char *argv[]) {
         }
       }
 
-//     printf("bnorm = %f , %d\n", bnorm, n);
 #pragma omp for
       for (i = 0; i < n; i++) {
         solx[i] = 0.0;
@@ -450,6 +447,14 @@ int main(int argc, char *argv[]) {
             }
           }
         }
+
+#pragma omp for private(j)
+        for (i = 0; i < m_max; i++) {
+          for (j = 0; j < m_max; j++) {
+            bab[i * m_max + j] = 0.0;
+          }
+        }
+
 #pragma omp single
         {
           cblas_dgemm(CblasColMajor, CblasTrans, CblasNoTrans, m_max, m_max, n,
@@ -459,7 +464,7 @@ int main(int argc, char *argv[]) {
         }
       }
 
-    }  // end of the parallel region
+    }  // end parallel region
 
     for (ite = 1; ite < nitecg; ite++) {
 #pragma omp parallel private(myid, istart, iend, interd)
