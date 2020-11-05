@@ -679,11 +679,11 @@ int main(int argc, char *argv[]) {
 
         /*--- Modified Gram-Schmidt orthogonalization ---*/
         for (i = 0; i < m; i++) {
-          enorm[i] = 0;
+          enorm[i] = 0.0;
         }
         for (i = 0; i < m; i++) {
           for (j = 0; j < m; j++) {
-            er[i * m + j] = 0;
+            er[i * m + j] = 0.0;
           }
         }
 #pragma omp for private(j)
@@ -780,7 +780,6 @@ int main(int argc, char *argv[]) {
             for (i = 0; i < m; i++) {
               temp += X[k * m + i] * X[j * m + i];
             }
-            // temp;
             // printf("x[%3d]^T x[%3d] = %8.3e\n", k + 1, j + 1, temp);
           }
         }
