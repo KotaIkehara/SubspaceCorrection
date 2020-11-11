@@ -151,61 +151,6 @@ void bic(int n, double *diag, int *iuhead, int *iucol, double *u, int istart,
   return;
 }
 
-void mkbtr(int n, int m_max, int numprocs, int istart, int iend, int myid,
-           double *f, double *V, double *B, double *r) {
-  int i, j;
-
-#pragma omp for
-  for (i = 0; i < m_max; i++) {
-    f[i] = 0.0;
-  }
-#pragma omp for
-  for (i = 0; i < m_max; i++) {
-    for (j = 0; j < numprocs; j++) {
-      V[i + j * m_max] = 0.0;
-    }
-  }
-  for (i = 0; i < m_max; i++) {
-    for (j = istart; j < iend; j++) {
-      V[myid * m_max + i] += B[i * n + j] * r[j];
-    }
-  }
-#pragma omp barrier
-
-#pragma omp single
-  {
-    for (i = 0; i < m_max; i++) {
-      for (j = 0; j < numprocs; j++) {
-        f[i] += V[j * m_max + i];
-      }
-    }
-  }
-  return;
-}
-
-void mkz(int n, int m_max, double *Bu, double *B, double *f, double *z) {
-  int i, j;
-
-#pragma omp for
-  for (i = 0; i < n; i++) {
-    Bu[i] = 0.0;
-  }
-
-#pragma omp for
-  for (i = 0; i < n; i++) {
-    for (j = 0; j < m_max; j++) {
-      Bu[i] += B[j * n + i] * f[j];
-    }
-  }
-
-#pragma omp for
-  for (i = 0; i < n; i++) {
-    z[i] += Bu[i];
-  }
-
-  return;
-}
-
 int main(int argc, char *argv[]) {
   FILE *fp;
   int *row_ptr, *fill, *col_ind;
@@ -380,6 +325,7 @@ int main(int argc, char *argv[]) {
   lapack_int *pivot;
 
   double t0, t1, ts, te;
+  double v;
   int total_ite = 0;
 
   double threshold = -atof(argv[2]);
@@ -525,7 +471,7 @@ int main(int argc, char *argv[]) {
     }  // end parallel region
 
     for (ite = 1; ite < nitecg; ite++) {
-#pragma omp parallel private(myid, istart, iend, interd)
+#pragma omp parallel private(myid, istart, iend, interd, i)
       {
 #pragma omp single
         { numprocs = omp_get_num_threads(); }
@@ -547,8 +493,20 @@ int main(int argc, char *argv[]) {
 
         // Subspace Correction
         if (zite > 0) {
-          // Step1. Compute f = B^T * r
-          mkbtr(n, m_max, numprocs, istart, iend, myid, f, V, B, r);
+// Step1. Compute f = B^T * r
+#pragma omp for
+          for (i = 0; i < m_max; i++) {
+            f[i] = 0.0;
+          }
+          for (i = 0; i < m_max; i++) {
+            v = 0.0;
+#pragma omp for reduction(+ : v)
+            for (j = 0; j < n; j++) {
+              v += B[i * n + j] * r[j];
+            }
+            f[i] = v;
+#pragma omp barrier
+          }
 
           // Step2. Solve (B^TAB)u = f:  forward/backward substitution
 #pragma omp single
@@ -556,8 +514,22 @@ int main(int argc, char *argv[]) {
             LAPACKE_dgetrs(LAPACK_COL_MAJOR, 'N', m_max, 1, bab, m_max, pivot,
                            f, m_max);
           }
+
           // Step3. Compute Zc = Z + Bu
-          mkz(n, m_max, Bu, B, f, z);
+#pragma omp for
+          for (i = 0; i < n; i++) {
+            Bu[i] = 0.0;
+          }
+#pragma omp for
+          for (i = 0; i < n; i++) {
+            for (j = 0; j < m_max; j++) {
+              Bu[i] += B[j * n + i] * f[j];
+            }
+          }
+#pragma omp for
+          for (i = 0; i < n; i++) {
+            z[i] += Bu[i];
+          }
 
         }  // end Subspace Correction
 
@@ -632,8 +604,8 @@ int main(int argc, char *argv[]) {
       if (sqrt(rnorm / bnorm) < err) {
         if (zite == 0) {
           t1 = get_time();
-          printf("\nICCG time: %lf\n", t1 - t0);
-          printf("ICCG ite: %d\n\n", ite);
+          printf("\nICCG ite: %d\n", ite);
+          printf("ICCG time: %lf\n", t1 - t0);
         }
         if (zite > 0) total_ite = total_ite + ite;
         break;
@@ -643,8 +615,8 @@ int main(int argc, char *argv[]) {
         /*--- Selection of Approximate Solution Vectors ---*/
         if (ite % h == 0) {
           it = 0;
-          for (l = 0; l < lmax; l++) {
-            it = it + pow(-1, l) * floor((ite - 1) / pow(m, l));
+          for (l = 0; l < lmax + 1; l++) {
+            it += pow(-1, l) * floor((ite - 1) / pow(m, l));
           }
           j = it % m;
 #pragma omp parallel for
@@ -817,8 +789,8 @@ int main(int argc, char *argv[]) {
   }
 
   te = get_time();
-  printf("SC-ICCG time: %lf\n", (te - ts) / 5.0);
-  printf("SC-ICCG ite: %lf\n\n", total_ite / 5.0);
+  printf("SC-ICCG ite: %lf\n", total_ite / 5.0);
+  printf("SC-ICCG time: %lf\n\n", (te - ts) / 5.0);
 
   free(V);
   free(B);
