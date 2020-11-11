@@ -1,0 +1,55 @@
+mtx/audikw_1.mtx
+n:943695 nnonzero:77651847
+
+ICCG time: 609.784174
+ICCG ite: 2629
+
+m_max = 20
+Threshold: 10^(-3.0) Thread: 1
+SC-ICCG time: 178.528179
+SC-ICCG ite: 737.000000
+
+mtx/audikw_1.mtx
+n:943695 nnonzero:77651847
+
+ICCG time: 609.936013
+ICCG ite: 2629
+
+m_max = 18
+Threshold: 10^(-3.5) Thread: 1
+SC-ICCG time: 207.276602
+SC-ICCG ite: 863.000000
+
+mtx/audikw_1.mtx
+n:943695 nnonzero:77651847
+
+ICCG time: 610.926713
+ICCG ite: 2629
+
+m_max = 15
+Threshold: 10^(-4.0) Thread: 1
+SC-ICCG time: 191.458527
+SC-ICCG ite: 804.000000
+
+mtx/audikw_1.mtx
+n:943695 nnonzero:77651847
+
+ICCG time: 609.257428
+ICCG ite: 2629
+
+m_max = 12
+Threshold: 10^(-5.0) Thread: 1
+SC-ICCG time: 246.958883
+SC-ICCG ite: 1059.000000
+
+mtx/audikw_1.mtx
+n:943695 nnonzero:77651847
+
+ICCG time: 608.333511
+ICCG ite: 2629
+
+m_max = 7
+Threshold: 10^(-6.0) Thread: 1
+SC-ICCG time: 381.479935
+SC-ICCG ite: 1668.000000
+
