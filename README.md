@@ -1,5 +1,5 @@
 # Automated Subspace Correction法を前処理とするCGソルバ
-以下では，不完全コレスキー分解（IC分解）を前処理とする共役勾配法（CG法）に基づく線型ソルバを***ICCG***，Subspace Correction法を前処理とするICCG法を***SCICCG***と表記する．
+以下では，不完全コレスキー分解（IC分解）を前処理とする共役勾配法（CG法）に基づく線型ソルバを***ICCG***，Subspace Correction法[[1]](https://pdfs.semanticscholar.org/edf9/7016849f3def445b07d33a6c30649a5036c6.pdf)を前処理とするICCG法を***SCICCG***と表記する．
 
 ## ファイルの説明
 - main.iccg.c：逐次版ICCG
