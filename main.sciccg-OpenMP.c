@@ -158,7 +158,7 @@ int main(int argc, char *argv[]) {
   char tmp[256];
   int i, j, k;
   int *nnonzero_row;
-  int n, nnonzero;
+  int n, nonzeros;
   int row, col;
   double *ad;
   int flag = 1;
@@ -173,14 +173,14 @@ int main(int argc, char *argv[]) {
   }
   printf("%s\n", argv[1]);
 
-  nnonzero = 0;
+  nonzeros = 0;
   // read file
   while (fgets(tmp, sizeof(tmp), fp)) {
     if (tmp[0] == '%') {
       /*ignore commments*/
     } else {
       if (flag) {
-        sscanf(tmp, "%d %d %d", &n, &n, &nnonzero);
+        sscanf(tmp, "%d %d %d", &n, &n, &nonzeros);
         nnonzero_row = (int *)malloc(sizeof(int) * n);
         for (i = 0; i < n; i++) {
           nnonzero_row[i] = 0;
@@ -190,11 +190,11 @@ int main(int argc, char *argv[]) {
         sscanf(tmp, "%d %d %lf", &row, &col, &val);
         if (row == col) {
           nnonzero_row[row - 1]++;
-          nnonzero++;
+          nonzeros++;
         } else {
           nnonzero_row[row - 1]++;
           nnonzero_row[col - 1]++;
-          nnonzero += 2;
+          nonzeros += 2;
         }
       }
     }
@@ -214,7 +214,6 @@ int main(int argc, char *argv[]) {
     printf("File open error!\n");
     exit(1);
   }
-
   // read file
   flag = 1;
   while (fgets(tmp, sizeof(tmp), fp)) {
@@ -223,12 +222,12 @@ int main(int argc, char *argv[]) {
     } else {
       if (flag) {
         sscanf(tmp, "%d %d %d", &n, &n, &j);
-        printf("n:%d nnonzero:%d\n", n, nnonzero);
-        A = (double *)malloc(sizeof(double) * nnonzero);
-        col_ind = (int *)malloc(sizeof(int) * nnonzero);
+        printf("n:%d nonzeros:%d\n", n, nonzeros);
+        A = (double *)malloc(sizeof(double) * nonzeros);
+        col_ind = (int *)malloc(sizeof(int) * nonzeros);
         fill = (int *)malloc(sizeof(int) * (n + 1));
         ad = (double *)malloc(sizeof(double) * n);
-        for (i = 0; i < nnonzero; i++) {
+        for (i = 0; i < nonzeros; i++) {
           A[i] = 0.0;
           col_ind[i] = 0;
         }
@@ -274,38 +273,38 @@ int main(int argc, char *argv[]) {
   }
   srand(1);
 
-  int nitecg = 5000;
+  int nitecg = 5000, ite, zite;
+  double err = 1.0e-8;
+
   double *solx;
   solx = (double *)malloc(sizeof(double) * n);
 
-  double err = 1.0e-8;
   int *iuhead, *iucol;
   iuhead = (int *)malloc(sizeof(int) * (n + 1));
-  iucol = (int *)malloc(sizeof(int) * nnonzero);
+  iucol = (int *)malloc(sizeof(int) * nonzeros);
 
   double *u;
-  u = (double *)malloc(sizeof(double) * nnonzero);
+  u = (double *)malloc(sizeof(double) * nonzeros);
   double *p, *q, *pn, *r;
   p = (double *)malloc(sizeof(double) * n);
   q = (double *)malloc(sizeof(double) * n);
   pn = (double *)malloc(sizeof(double) * n);
   r = (double *)malloc(sizeof(double) * n);
+
   double cgropp, cgrop;
   double alpha, alphat, beta, ar0;
+
   double *diag, *z;
   diag = (double *)malloc(sizeof(double) * n);
   z = (double *)malloc(sizeof(double) * n);
 
   double gamma, rnorm, bnorm;
-  int ite;
-
   int h = 1, it, l, lmax;
   int m = atoi(argv[3]);
   double *E;
   E = (double *)malloc(sizeof(double) * (n * m));
   lmax = ceil(log(nitecg) / log(m));
 
-  int zite;
   double *Bu;
   Bu = (double *)malloc(sizeof(double) * n);
   lapack_int info;
@@ -335,10 +334,6 @@ int main(int argc, char *argv[]) {
 
   char mtxname[256];
   strcpy(mtxname, argv[1] + 4);
-
-  double tx, ty;
-  double *V;
-  V = (double *)malloc(m * (omp_get_max_threads()) * sizeof(double));
 
   for (zite = 0; zite < 6; zite++) {
     if (zite == 1) {
@@ -378,7 +373,7 @@ int main(int argc, char *argv[]) {
           iuhead[i] = 0;
         }
 #pragma omp for
-        for (i = 0; i < nnonzero; i++) {
+        for (i = 0; i < nonzeros; i++) {
           iucol[i] = 0;
           u[i] = 0.0;
         }
@@ -470,6 +465,7 @@ int main(int argc, char *argv[]) {
 
     }  // end parallel region
 
+    /*--- ICCG ---*/
     for (ite = 1; ite < nitecg; ite++) {
 #pragma omp parallel private(myid, istart, iend, interd, i)
       {
@@ -493,7 +489,7 @@ int main(int argc, char *argv[]) {
 
         // Subspace Correction
         if (zite > 0) {
-// Step1. Compute f = B^T * r
+          // Step1. Compute f = B^T * r
 #pragma omp for
           for (i = 0; i < m_max; i++) {
             f[i] = 0.0;
@@ -599,7 +595,7 @@ int main(int argc, char *argv[]) {
 #pragma omp single
           { fprintf(fp, "%d %lf\n", ite, sqrt(rnorm / bnorm)); }
         }
-      }  // end of parallel region
+      }  // end parallel
 
       if (sqrt(rnorm / bnorm) < err) {
         if (zite == 0) {
@@ -629,57 +625,65 @@ int main(int argc, char *argv[]) {
         }
         /*--- end Selection of Approximate Solution Vectors ---*/
       }
-
-    }  // end ICCG
+    }
+    /*--- end ICCG ---*/
 
     if (zite == 0) {
       double *enorm, *er, *eq;
       enorm = (double *)malloc(sizeof(double) * m);
       er = (double *)malloc(sizeof(double) * (m * m));
       eq = (double *)malloc(sizeof(double) * (m * n));
-#pragma omp parallel
+#pragma omp parallel private(i, j)
       {
         // e = x - x~
-#pragma omp for private(j)
         for (i = 0; i < m; i++) {
+#pragma omp for
           for (j = 0; j < n; j++) {
-            E[(i * n) + j] = solx[j] - E[(i * n) + j];
+            E[i * n + j] = solx[j] - E[i * n + j];
           }
         }
 
-        /*--- Modified Gram-Schmidt orthogonalization ---*/
+/*--- Modified Gram-Schmidt orthogonalization ---*/
+#pragma omp for
         for (i = 0; i < m; i++) {
           enorm[i] = 0.0;
         }
+#pragma omp for private(j)
         for (i = 0; i < m; i++) {
           for (j = 0; j < m; j++) {
             er[i * m + j] = 0.0;
           }
         }
-#pragma omp for private(j)
+
         for (i = 0; i < m; i++) {
+          v = 0.0;
+#pragma omp for reduction(+ : v)
           for (j = 0; j < n; j++) {
-            enorm[i] += E[i * n + j] * E[i * n + j];
+            v += E[i * n + j] * E[i * n + j];
           }
-          enorm[i] = sqrt(enorm[i]);
+          enorm[i] = sqrt(v);
+#pragma omp barrier
         }
 
-      }  // end of parallel region
+        for (i = 0; i < m; i++) {
+          er[i * m + i] = enorm[i];
+#pragma omp for
+          for (j = 0; j < n; j++) {
+            eq[i * n + j] = E[i * n + j] / er[i * m + i];
+          }
 
-      for (i = 0; i < m; i++) {
-        er[i * m + i] = enorm[i];
-        for (j = 0; j < n; j++) {
-          eq[i * n + j] = E[i * n + j] / er[i * m + i];
-        }
-        for (j = i + 1; j < m; j++) {
-          for (k = 0; k < n; k++) {
-            er[i * m + j] += eq[i * n + k] * E[j * n + k];
-          }
-          for (k = 0; k < n; k++) {
-            E[j * n + k] = E[j * n + k] - eq[i * n + k] * er[i * m + j];
+          for (j = i + 1; j < m; j++) {
+#pragma omp for
+            for (k = 0; k < n; k++) {
+              er[i * m + j] += eq[i * n + k] * E[j * n + k];
+            }
+#pragma omp for
+            for (k = 0; k < n; k++) {
+              E[j * n + k] = E[j * n + k] - eq[i * n + k] * er[i * m + j];
+            }
           }
         }
-      }
+      }  // end parallel
       /*--- end Modified Gram-Schmidt orthogonalization ---*/
 
       /*--- E^T*A*E---*/
@@ -690,10 +694,10 @@ int main(int argc, char *argv[]) {
       X2 = (double *)malloc(sizeof(double) * (m * m));
       Y = (double *)malloc(m * sizeof(double));
 
-#pragma omp parallel
+#pragma omp parallel private(i)
       {
-#pragma omp for private(j)
         for (i = 0; i < m; i++) {
+#pragma omp for
           for (j = 0; j < n; j++) {
             ae[i * n + j] = 0.0;
           }
@@ -707,7 +711,7 @@ int main(int argc, char *argv[]) {
             }
           }
         }
-      }  // end of the parallel region
+      }  // end parallel
 
       // X = eq^T * ae
       cblas_dgemm(CblasColMajor, CblasTrans, CblasNoTrans, m, m, n, 1.0, eq, n,
@@ -792,7 +796,6 @@ int main(int argc, char *argv[]) {
   printf("SC-ICCG ite: %lf\n", total_ite / 5.0);
   printf("SC-ICCG time: %lf\n\n", (te - ts) / 5.0);
 
-  free(V);
   free(B);
   free(f);
   free(ab);
