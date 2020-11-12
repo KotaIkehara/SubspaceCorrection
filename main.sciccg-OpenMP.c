@@ -161,6 +161,7 @@ int main(int argc, char *argv[]) {
   int n, nnonzero;
   int row, col;
   double *ad;
+  int flag = 1;
 
   if (argc != 4) {
     printf("Usage: ./example.out <mtx_filename> <alpha> <m_max>\n");
@@ -178,13 +179,13 @@ int main(int argc, char *argv[]) {
     if (tmp[0] == '%') {
       /*ignore commments*/
     } else {
-      if (nnonzero == 0) {
+      if (flag) {
         sscanf(tmp, "%d %d %d", &n, &n, &nnonzero);
         nnonzero_row = (int *)malloc(sizeof(int) * n);
-        for (j = 0; j < n; j++) {
-          nnonzero_row[j] = 0;
+        for (i = 0; i < n; i++) {
+          nnonzero_row[i] = 0;
         }
-        nnonzero = 1;
+        flag = 0;
       } else {
         sscanf(tmp, "%d %d %lf", &row, &col, &val);
         if (row == col) {
@@ -198,7 +199,6 @@ int main(int argc, char *argv[]) {
       }
     }
   }
-  nnonzero--;
 
   row_ptr = (int *)malloc(sizeof(int) * (n + 1));
   row_ptr[0] = 0;
@@ -216,29 +216,29 @@ int main(int argc, char *argv[]) {
   }
 
   // read file
-  i = 0;
+  flag = 1;
   while (fgets(tmp, sizeof(tmp), fp)) {
     if (tmp[0] == '%') {
       /*ignore commments*/
     } else {
-      if (i == 0) {
+      if (flag) {
         sscanf(tmp, "%d %d %d", &n, &n, &j);
         printf("n:%d nnonzero:%d\n", n, nnonzero);
         A = (double *)malloc(sizeof(double) * nnonzero);
         col_ind = (int *)malloc(sizeof(int) * nnonzero);
         fill = (int *)malloc(sizeof(int) * (n + 1));
         ad = (double *)malloc(sizeof(double) * n);
-        for (j = 0; j < nnonzero; j++) {
-          A[j] = 0.0;
-          col_ind[j] = 0;
+        for (i = 0; i < nnonzero; i++) {
+          A[i] = 0.0;
+          col_ind[i] = 0;
         }
-        for (j = 0; j < n + 1; j++) {
-          fill[j] = 0;
+        for (i = 0; i < n + 1; i++) {
+          fill[i] = 0;
         }
-        for (j = 0; j < n; j++) {
+        for (i = 0; i < n; i++) {
           ad[i] = 0.0;
         }
-        i++;
+        flag = 0;
       } else {
         sscanf(tmp, "%d %d %lf", &row, &col, &val);
         row--;
