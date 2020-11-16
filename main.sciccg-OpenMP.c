@@ -14,7 +14,7 @@ double get_time() {
 }
 
 // ad^(-1) * A * ad(-1)
-void diagscaling(int n, int *row_ptr, int *col_ind, double *A, double *ad) {
+void diagscale(int n, int *row_ptr, int *col_ind, double *A, double *ad) {
   int i, j, jj;
 
   for (i = 0; i < n; i++) {
@@ -158,9 +158,10 @@ int main(int argc, char *argv[]) {
   char tmp[256];
   int i, j, k;
   int *nnonzero_row;
-  int n, nnonzero;
+  int n, nonzeros;
   int row, col;
   double *ad;
+  int flag = 1;
 
   if (argc != 4) {
     printf("Usage: ./example.out <mtx_filename> <alpha> <m_max>\n");
@@ -172,33 +173,32 @@ int main(int argc, char *argv[]) {
   }
   printf("%s\n", argv[1]);
 
-  nnonzero = 0;
+  nonzeros = 0;
   // read file
   while (fgets(tmp, sizeof(tmp), fp)) {
     if (tmp[0] == '%') {
       /*ignore commments*/
     } else {
-      if (nnonzero == 0) {
-        sscanf(tmp, "%d %d %d", &n, &n, &nnonzero);
+      if (flag) {
+        sscanf(tmp, "%d %d %d", &n, &n, &nonzeros);
         nnonzero_row = (int *)malloc(sizeof(int) * n);
-        for (j = 0; j < n; j++) {
-          nnonzero_row[j] = 0;
+        for (i = 0; i < n; i++) {
+          nnonzero_row[i] = 0;
         }
-        nnonzero = 1;
+        flag = 0;
       } else {
         sscanf(tmp, "%d %d %lf", &row, &col, &val);
         if (row == col) {
           nnonzero_row[row - 1]++;
-          nnonzero++;
+          nonzeros++;
         } else {
           nnonzero_row[row - 1]++;
           nnonzero_row[col - 1]++;
-          nnonzero += 2;
+          nonzeros += 2;
         }
       }
     }
   }
-  nnonzero--;
 
   row_ptr = (int *)malloc(sizeof(int) * (n + 1));
   row_ptr[0] = 0;
@@ -214,31 +214,30 @@ int main(int argc, char *argv[]) {
     printf("File open error!\n");
     exit(1);
   }
-
   // read file
-  i = 0;
+  flag = 1;
   while (fgets(tmp, sizeof(tmp), fp)) {
     if (tmp[0] == '%') {
       /*ignore commments*/
     } else {
-      if (i == 0) {
+      if (flag) {
         sscanf(tmp, "%d %d %d", &n, &n, &j);
-        printf("n:%d nnonzero:%d\n", n, nnonzero);
-        A = (double *)malloc(sizeof(double) * nnonzero);
-        col_ind = (int *)malloc(sizeof(int) * nnonzero);
+        printf("n:%d nonzeros:%d\n", n, nonzeros);
+        A = (double *)malloc(sizeof(double) * nonzeros);
+        col_ind = (int *)malloc(sizeof(int) * nonzeros);
         fill = (int *)malloc(sizeof(int) * (n + 1));
         ad = (double *)malloc(sizeof(double) * n);
-        for (j = 0; j < nnonzero; j++) {
-          A[j] = 0.0;
-          col_ind[j] = 0;
+        for (i = 0; i < nonzeros; i++) {
+          A[i] = 0.0;
+          col_ind[i] = 0;
         }
-        for (j = 0; j < n + 1; j++) {
-          fill[j] = 0;
+        for (i = 0; i < n + 1; i++) {
+          fill[i] = 0;
         }
-        for (j = 0; j < n; j++) {
+        for (i = 0; i < n; i++) {
           ad[i] = 0.0;
         }
-        i++;
+        flag = 0;
       } else {
         sscanf(tmp, "%d %d %lf", &row, &col, &val);
         row--;
@@ -264,7 +263,7 @@ int main(int argc, char *argv[]) {
   free(fill);
   fclose(fp);
 
-  diagscaling(n, row_ptr, col_ind, A, ad);
+  diagscale(n, row_ptr, col_ind, A, ad);
 
   // b: right hand vector
   double *b;
@@ -274,38 +273,38 @@ int main(int argc, char *argv[]) {
   }
   srand(1);
 
-  int nitecg = 5000;
+  int nitecg = 5000, ite, zite;
+  double err = 1.0e-8;
+
   double *solx;
   solx = (double *)malloc(sizeof(double) * n);
 
-  double err = 1.0e-8;
   int *iuhead, *iucol;
   iuhead = (int *)malloc(sizeof(int) * (n + 1));
-  iucol = (int *)malloc(sizeof(int) * nnonzero);
+  iucol = (int *)malloc(sizeof(int) * nonzeros);
 
   double *u;
-  u = (double *)malloc(sizeof(double) * nnonzero);
+  u = (double *)malloc(sizeof(double) * nonzeros);
   double *p, *q, *pn, *r;
   p = (double *)malloc(sizeof(double) * n);
   q = (double *)malloc(sizeof(double) * n);
   pn = (double *)malloc(sizeof(double) * n);
   r = (double *)malloc(sizeof(double) * n);
+
   double cgropp, cgrop;
   double alpha, alphat, beta, ar0;
+
   double *diag, *z;
   diag = (double *)malloc(sizeof(double) * n);
   z = (double *)malloc(sizeof(double) * n);
 
   double gamma, rnorm, bnorm;
-  int ite;
-
   int h = 1, it, l, lmax;
   int m = atoi(argv[3]);
   double *E;
   E = (double *)malloc(sizeof(double) * (n * m));
   lmax = ceil(log(nitecg) / log(m));
 
-  int zite;
   double *Bu;
   Bu = (double *)malloc(sizeof(double) * n);
   lapack_int info;
@@ -335,10 +334,6 @@ int main(int argc, char *argv[]) {
 
   char mtxname[256];
   strcpy(mtxname, argv[1] + 4);
-
-  double tx, ty;
-  double *V;
-  V = (double *)malloc(m * (omp_get_max_threads()) * sizeof(double));
 
   for (zite = 0; zite < 6; zite++) {
     if (zite == 1) {
@@ -378,7 +373,7 @@ int main(int argc, char *argv[]) {
           iuhead[i] = 0;
         }
 #pragma omp for
-        for (i = 0; i < nnonzero; i++) {
+        for (i = 0; i < nonzeros; i++) {
           iucol[i] = 0;
           u[i] = 0.0;
         }
@@ -470,6 +465,7 @@ int main(int argc, char *argv[]) {
 
     }  // end parallel region
 
+    /*--- ICCG ---*/
     for (ite = 1; ite < nitecg; ite++) {
 #pragma omp parallel private(myid, istart, iend, interd, i)
       {
@@ -491,9 +487,9 @@ int main(int argc, char *argv[]) {
         //   z[i] = r[i];
         // }
 
-        // Subspace Correction
+        /*--- Subspace Correction ---*/
         if (zite > 0) {
-// Step1. Compute f = B^T * r
+          // Step1. Compute f = B^T * r
 #pragma omp for
           for (i = 0; i < m_max; i++) {
             f[i] = 0.0;
@@ -530,8 +526,8 @@ int main(int argc, char *argv[]) {
           for (i = 0; i < n; i++) {
             z[i] += Bu[i];
           }
-
-        }  // end Subspace Correction
+        }
+        /*--- end Subspace Correction ---*/
 
 #pragma omp single
         {
@@ -599,7 +595,7 @@ int main(int argc, char *argv[]) {
 #pragma omp single
           { fprintf(fp, "%d %lf\n", ite, sqrt(rnorm / bnorm)); }
         }
-      }  // end of parallel region
+      }  // end parallel
 
       if (sqrt(rnorm / bnorm) < err) {
         if (zite == 0) {
@@ -629,8 +625,8 @@ int main(int argc, char *argv[]) {
         }
         /*--- end Selection of Approximate Solution Vectors ---*/
       }
-
-    }  // end ICCG
+    }
+    /*--- end ICCG ---*/
 
     if (zite == 0) {
       double *enorm, *er, *eq;
@@ -690,10 +686,10 @@ int main(int argc, char *argv[]) {
       X2 = (double *)malloc(sizeof(double) * (m * m));
       Y = (double *)malloc(m * sizeof(double));
 
-#pragma omp parallel
+#pragma omp parallel private(i)
       {
-#pragma omp for private(j)
         for (i = 0; i < m; i++) {
+#pragma omp for
           for (j = 0; j < n; j++) {
             ae[i * n + j] = 0.0;
           }
@@ -707,7 +703,7 @@ int main(int argc, char *argv[]) {
             }
           }
         }
-      }  // end of the parallel region
+      }  // end parallel
 
       // X = eq^T * ae
       cblas_dgemm(CblasColMajor, CblasTrans, CblasNoTrans, m, m, n, 1.0, eq, n,
@@ -792,7 +788,6 @@ int main(int argc, char *argv[]) {
   printf("SC-ICCG ite: %lf\n", total_ite / 5.0);
   printf("SC-ICCG time: %lf\n\n", (te - ts) / 5.0);
 
-  free(V);
   free(B);
   free(f);
   free(ab);
