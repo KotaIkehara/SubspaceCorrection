@@ -117,8 +117,8 @@ void mkbu(double *ad, double *A, int n, int *col_ind, int *row_ptr,
   return;
 }
 
-void bic(int n, double *diag, int *iuhead, int *iucol, double *u, int istart,
-         int iend) {
+int bic(int n, double *diag, int *iuhead, int *iucol, double *u, int istart,
+        int iend) {
   int i, j, jj, jp, ji, jjp;
 
   for (i = istart; i < iend; i++) {
@@ -142,13 +142,13 @@ void bic(int n, double *diag, int *iuhead, int *iucol, double *u, int istart,
 
     if (fabs(diag[i]) < 0.001) {
       printf("diag error: i:%d, diag[i]:%lf\n", i, diag[i]);
-      exit(1);
+      return 0;
     }
   }
 
 #pragma omp barrier
 
-  return;
+  return 1;
 }
 
 int main(int argc, char *argv[]) {
@@ -158,18 +158,19 @@ int main(int argc, char *argv[]) {
   char tmp[256];
   int i, j, k;
   int *nnonzero_row;
-  int n, nonzeros;
+  int n, nonzeros = 0;
   int row, col;
   double *ad;
   int flag = 1;
 
   if (argc != 4) {
     printf("Usage: ./example.out <mtx_filename> <alpha> <m_max>\n");
-    exit(1);
+    return 0;
   }
+
   if ((fp = fopen(argv[1], "r")) == NULL) {
     printf("File open error!\n");
-    exit(1);
+    return 0;
   }
   printf("%s\n", argv[1]);
 
@@ -180,7 +181,7 @@ int main(int argc, char *argv[]) {
       /*ignore commments*/
     } else {
       if (flag) {
-        sscanf(tmp, "%d %d %d", &n, &n, &nonzeros);
+        sscanf(tmp, "%d %d %d", &n, &n, &j);
         nnonzero_row = (int *)malloc(sizeof(int) * n);
         for (i = 0; i < n; i++) {
           nnonzero_row[i] = 0;
@@ -188,12 +189,14 @@ int main(int argc, char *argv[]) {
         flag = 0;
       } else {
         sscanf(tmp, "%d %d %lf", &row, &col, &val);
+        row--;
+        col--;
         if (row == col) {
-          nnonzero_row[row - 1]++;
+          nnonzero_row[row]++;
           nonzeros++;
         } else {
-          nnonzero_row[row - 1]++;
-          nnonzero_row[col - 1]++;
+          nnonzero_row[row]++;
+          nnonzero_row[col]++;
           nonzeros += 2;
         }
       }
@@ -212,7 +215,7 @@ int main(int argc, char *argv[]) {
   // next scan
   if ((fp = fopen(argv[1], "r")) == NULL) {
     printf("File open error!\n");
-    exit(1);
+    return 0;
   }
   // read file
   flag = 1;
@@ -734,8 +737,8 @@ int main(int argc, char *argv[]) {
           }
           temp = sqrt(temp);
 
-          // printf("[%3d] eigenvalue = %8.3e, || Ax - wx ||_2 = %8.3e\n", k +
-          // 1, W[k], temp);
+          // printf("[%3d] eigenvalue = %8.3e, || Ax - wx ||_2 = %8.3e\n", k
+          // + 1, W[k], temp);
         }
 
         // printf("-- check the orthogonality of eigenvectors --\n");
@@ -754,7 +757,7 @@ int main(int argc, char *argv[]) {
 
       if (W[0] > theta) {
         printf("Error: m_max = 0. Threshold is too small.");
-        exit(1);
+        return 0;
       }
       for (i = 0; i < m; i++) {
         if (W[i] <= theta) {
