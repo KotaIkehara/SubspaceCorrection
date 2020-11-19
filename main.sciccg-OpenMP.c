@@ -7,161 +7,25 @@
 #include <sys/time.h>
 #include <time.h>
 
-double get_time() {
-  struct timeval tv;
-  gettimeofday(&tv, NULL);
-  return tv.tv_sec + (double)tv.tv_usec * 1e-6;
-}
-
-// ad^(-1) * A * ad(-1)
-void diagscale(int n, int *row_ptr, int *col_ind, double *A, double *ad) {
-  int i, j, jj;
-
-  for (i = 0; i < n; i++) {
-    for (j = row_ptr[i]; j < row_ptr[i + 1]; j++) {
-      A[j] = A[j] / (ad[i] * ad[col_ind[j]]);
-    }
-  }
-
-  for (i = 0; i < n; i++) {
-    for (j = row_ptr[i]; j < row_ptr[i + 1]; j++) {
-      jj = col_ind[j];
-      if (jj == i) {
-        ad[i] = A[j];
-      }
-    }
-  }
-  return;
-}
-
+double get_time(void);
+void diagscale(int n, int *row_ptr, int *col_ind, double *A, double *ad);
 void fbsub(int *iuhead, int *iucol, double *u, int n, double *diag, double *z,
-           double *r, int istart, int iend) {
-  int i, j, jj;
-
-#pragma omp for
-  for (i = 0; i < n; i++) {
-    z[i] = r[i];
-  }
-
-  // Forward Substitution
-  for (i = istart; i < iend; i++) {
-    for (j = iuhead[i]; j < iuhead[i + 1]; j++) {
-      jj = iucol[j];
-      z[jj] = z[jj] - z[i] * u[j] * diag[i];
-    }
-  }
-
-  // Backward Substitution
-  z[iend - 1] = z[iend - 1] * diag[iend - 1];
-
-  for (i = iend - 2; i >= istart; --i) {
-    for (j = iuhead[i]; j < iuhead[i + 1]; j++) {
-      jj = iucol[j];
-      z[i] = z[i] - u[j] * z[jj];
-    }
-    z[i] = z[i] * diag[i];
-  }
-
-#pragma omp barrier
-
-  return;
-}
-
+           double *r, int istart, int iend);
 void mkbu(double *ad, double *A, int n, int *col_ind, int *row_ptr,
           double *diag, double *u, int *iuhead, int *iucol, int istart,
-          int iend, int myid, double gamma, int *unnonzero, int procs) {
-  int kk, i, j, jj, jstart;
-
-#pragma omp for
-  for (i = 0; i < n; i++) {
-    diag[i] = ad[i] * gamma;
-  }
-
-  for (i = istart; i < iend; i++) {
-    for (j = row_ptr[i]; j < row_ptr[i + 1]; j++) {
-      jj = col_ind[j];
-      if (jj > i && jj < iend) {
-        unnonzero[myid + 1]++;
-      }
-    }
-  }
-#pragma omp barrier
-
-#pragma omp single
-  {
-    for (i = 1; i < procs + 1; i++) {
-      unnonzero[i] = unnonzero[i] + unnonzero[i - 1];
-    }
-  }
-
-  kk = 0;
-  jstart = unnonzero[myid];
-  iuhead[istart] = jstart;
-  for (i = istart; i < iend; i++) {
-    for (j = row_ptr[i]; j < row_ptr[i + 1]; j++) {
-      jj = col_ind[j];
-      if (jj > i && jj < iend) {
-        iucol[kk + jstart] = jj;
-        u[kk + jstart] = A[j];
-        kk++;
-      }
-    }
-    iuhead[i + 1] = kk + jstart;
-  }
-
-#pragma omp barrier
-
-#pragma omp single
-  { free(unnonzero); }
-
-  return;
-}
-
+          int iend, int myid, double gamma, int *unnonzero, int procs);
 int bic(int n, double *diag, int *iuhead, int *iucol, double *u, int istart,
-        int iend) {
-  int i, j, jj, jp, ji, jjp;
-
-  for (i = istart; i < iend; i++) {
-    for (j = iuhead[i]; j < iuhead[i + 1]; j++) {
-      jj = iucol[j];
-
-      diag[jj] = diag[jj] - u[j] * u[j] / diag[i];
-
-      for (jp = j + 1; jp < iuhead[i + 1]; jp++) {
-        jjp = iucol[jp];
-        if (jjp > jj) {
-          for (ji = iuhead[jj]; ji < iuhead[jj + 1]; ji++) {
-            if (iucol[ji] == jjp) {
-              u[ji] = u[ji] - u[j] * u[jp] / diag[i];
-              break;
-            }
-          }
-        }
-      }
-    }
-
-    if (fabs(diag[i]) < 0.001) {
-      printf("diag error: i:%d, diag[i]:%lf\n", i, diag[i]);
-      return 0;
-    }
-  }
-
-#pragma omp barrier
-
-  return 1;
-}
+        int iend);
+int get_mtx_info(FILE *fp, int n, int *nonzeros, int *row_ptr);
 
 int main(int argc, char *argv[]) {
+  int i, j, k;
   FILE *fp;
   int *row_ptr, *fill, *col_ind;
-  double *A, val;
+  double *A;
   char tmp[256];
-  int i, j, k;
-  int *nnonzero_row;
   int n, nonzeros;
-  int row, col;
   double *ad;
-  int flag = 1;
 
   if (argc != 4) {
     printf("Usage: ./example.out <mtx_filename> <alpha> <m_max>\n");
@@ -176,85 +40,35 @@ int main(int argc, char *argv[]) {
 
   while (fgets(tmp, sizeof(tmp), fp) != NULL) {
     if (tmp[0] == '%') {
-      continue;
+      continue;  // ignore comment
     } else {
       sscanf(tmp, "%d %d %d", &n, &n, &j);
       break;
     }
   }
 
-  nnonzero_row = (int *)malloc(sizeof(int) * n);
   row_ptr = (int *)malloc(sizeof(int) * (n + 1));
-
-  nonzeros = 0;
-  while (fgets(tmp, sizeof(tmp), fp) != NULL) {
-    sscanf(tmp, "%d %d %lf", &row, &col, &val);
-    row--;
-    col--;
-    if (row == col) {
-      nnonzero_row[row]++;
-      nonzeros++;
-    } else {
-      nnonzero_row[row]++;
-      nnonzero_row[col]++;
-      nonzeros += 2;
-    }
-  }
-
-  row_ptr[0] = 0;
-  for (i = 1; i < n + 1; i++) {
-    row_ptr[i] = row_ptr[i - 1] + nnonzero_row[i - 1];
-  }
-
-  free(nnonzero_row);
+  // get nonzeros, row_ptr
+  get_mtx_info(fp, n, &nonzeros, &row_ptr[0]);
   fclose(fp);
 
+  // malloc
   A = (double *)malloc(sizeof(double) * nonzeros);
   col_ind = (int *)malloc(sizeof(int) * nonzeros);
   fill = (int *)malloc(sizeof(int) * (n + 1));
   ad = (double *)malloc(sizeof(double) * n);
-  for (i = 0; i < nonzeros; i++) {
-    A[i] = 0.0;
-    col_ind[i] = 0;
-  }
+
   for (i = 0; i < n + 1; i++) {
     fill[i] = 0;
   }
-  for (i = 0; i < n; i++) {
-    ad[i] = 0.0;
-  }
 
-  // next scan
   if ((fp = fopen(argv[1], "r")) == NULL) {
     printf("File open error!\n");
     return 0;
   }
-  while (fgets(tmp, sizeof(tmp), fp) != NULL) {
-    if (tmp[0] == '%') {
-      continue;
-    } else {
-      break;
-    }
-  }
-  while (fgets(tmp, sizeof(tmp), fp) != NULL) {
-    sscanf(tmp, "%d %d %lf", &row, &col, &val);
-    row--;
-    col--;
-    if (row != col) {
-      col_ind[row_ptr[col] + fill[col]] = row;
-      A[row_ptr[col] + fill[col]] = val;
-      fill[col]++;
 
-      col_ind[row_ptr[row] + fill[row]] = col;
-      A[row_ptr[row] + fill[row]] = val;
-      fill[row]++;
-    } else {
-      col_ind[row_ptr[row] + fill[row]] = col;
-      A[row_ptr[row] + fill[row]] = val;
-      ad[row] = sqrt(val);
-      fill[row]++;
-    }
-  }
+  // get col_ind, A, ad
+  get_mtx(fp, row_ptr, &col_ind[0], &fill[0], &A[0], &ad[0]);
 
   free(fill);
   fclose(fp);
@@ -408,7 +222,7 @@ int main(int argc, char *argv[]) {
         solx[i] = 0.0;
       }
 
-// Calc Residual
+      // Calc Residual
 #pragma omp for private(ar0, j)
       for (i = 0; i < n; i++) {
         ar0 = 0.0;
@@ -730,7 +544,8 @@ int main(int argc, char *argv[]) {
           }
           temp = sqrt(temp);
 
-          // printf("[%3d] eigenvalue = %8.3e, || Ax - wx ||_2 = %8.3e\n", k
+          // printf("[%3d] eigenvalue = %8.3e, || Ax - wx ||_2 =
+          // %8.3e\n", k
           // + 1, W[k], temp);
         }
 
@@ -741,7 +556,8 @@ int main(int argc, char *argv[]) {
             for (i = 0; i < m; i++) {
               temp += X[k * m + i] * X[j * m + i];
             }
-            // printf("x[%3d]^T x[%3d] = %8.3e\n", k + 1, j + 1, temp);
+            // printf("x[%3d]^T x[%3d] = %8.3e\n", k + 1, j + 1,
+            // temp);
           }
         }
       }
@@ -806,4 +622,226 @@ int main(int argc, char *argv[]) {
   free(z);
   free(Bu);
   free(E);
+}
+
+double get_time(void) {
+  struct timeval tv;
+  gettimeofday(&tv, NULL);
+  return tv.tv_sec + (double)tv.tv_usec * 1e-6;
+}
+
+// ad^(-1) * A * ad(-1)
+void diagscale(int n, int *row_ptr, int *col_ind, double *A, double *ad) {
+  int i, j, jj;
+
+  for (i = 0; i < n; i++) {
+    for (j = row_ptr[i]; j < row_ptr[i + 1]; j++) {
+      A[j] = A[j] / (ad[i] * ad[col_ind[j]]);
+    }
+  }
+
+  for (i = 0; i < n; i++) {
+    for (j = row_ptr[i]; j < row_ptr[i + 1]; j++) {
+      jj = col_ind[j];
+      if (jj == i) {
+        ad[i] = A[j];
+      }
+    }
+  }
+  return;
+}
+
+void fbsub(int *iuhead, int *iucol, double *u, int n, double *diag, double *z,
+           double *r, int istart, int iend) {
+  int i, j, jj;
+
+#pragma omp for
+  for (i = 0; i < n; i++) {
+    z[i] = r[i];
+  }
+
+  // Forward Substitution
+  for (i = istart; i < iend; i++) {
+    for (j = iuhead[i]; j < iuhead[i + 1]; j++) {
+      jj = iucol[j];
+      z[jj] = z[jj] - z[i] * u[j] * diag[i];
+    }
+  }
+
+  // Backward Substitution
+  z[iend - 1] = z[iend - 1] * diag[iend - 1];
+
+  for (i = iend - 2; i >= istart; --i) {
+    for (j = iuhead[i]; j < iuhead[i + 1]; j++) {
+      jj = iucol[j];
+      z[i] = z[i] - u[j] * z[jj];
+    }
+    z[i] = z[i] * diag[i];
+  }
+
+#pragma omp barrier
+
+  return;
+}
+
+void mkbu(double *ad, double *A, int n, int *col_ind, int *row_ptr,
+          double *diag, double *u, int *iuhead, int *iucol, int istart,
+          int iend, int myid, double gamma, int *unnonzero, int procs) {
+  int kk, i, j, jj, jstart;
+
+#pragma omp for
+  for (i = 0; i < n; i++) {
+    diag[i] = ad[i] * gamma;
+  }
+
+  for (i = istart; i < iend; i++) {
+    for (j = row_ptr[i]; j < row_ptr[i + 1]; j++) {
+      jj = col_ind[j];
+      if (jj > i && jj < iend) {
+        unnonzero[myid + 1]++;
+      }
+    }
+  }
+#pragma omp barrier
+
+#pragma omp single
+  {
+    for (i = 1; i < procs + 1; i++) {
+      unnonzero[i] = unnonzero[i] + unnonzero[i - 1];
+    }
+  }
+
+  kk = 0;
+  jstart = unnonzero[myid];
+  iuhead[istart] = jstart;
+  for (i = istart; i < iend; i++) {
+    for (j = row_ptr[i]; j < row_ptr[i + 1]; j++) {
+      jj = col_ind[j];
+      if (jj > i && jj < iend) {
+        iucol[kk + jstart] = jj;
+        u[kk + jstart] = A[j];
+        kk++;
+      }
+    }
+    iuhead[i + 1] = kk + jstart;
+  }
+
+#pragma omp barrier
+
+#pragma omp single
+  { free(unnonzero); }
+
+  return;
+}
+
+int bic(int n, double *diag, int *iuhead, int *iucol, double *u, int istart,
+        int iend) {
+  int i, j, jj, jp, ji, jjp;
+
+  for (i = istart; i < iend; i++) {
+    for (j = iuhead[i]; j < iuhead[i + 1]; j++) {
+      jj = iucol[j];
+
+      diag[jj] = diag[jj] - u[j] * u[j] / diag[i];
+
+      for (jp = j + 1; jp < iuhead[i + 1]; jp++) {
+        jjp = iucol[jp];
+        if (jjp > jj) {
+          for (ji = iuhead[jj]; ji < iuhead[jj + 1]; ji++) {
+            if (iucol[ji] == jjp) {
+              u[ji] = u[ji] - u[j] * u[jp] / diag[i];
+              break;
+            }
+          }
+        }
+      }
+    }
+
+    if (fabs(diag[i]) < 0.001) {
+      printf("diag error: i:%d, diag[i]:%lf\n", i, diag[i]);
+      return 0;
+    }
+  }
+
+#pragma omp barrier
+
+  return 1;
+}
+
+int get_mtx_info(FILE *fp, int n, int *nonzeros, int *row_ptr) {
+  int i;
+  const int buf_len = 512;
+  char cbuf[buf_len];
+  int row, col;
+  double val;
+  int count;
+  int *nnonzero_row;
+
+  nnonzero_row = (int *)malloc(sizeof(int) * n);
+
+  count = 0;
+  while (fgets(cbuf, sizeof(cbuf), fp) != NULL) {
+    sscanf(cbuf, "%d %d %lf", &row, &col, &val);
+    row--;
+    col--;
+    if (row == col) {
+      nnonzero_row[row]++;
+      count++;
+    } else {
+      nnonzero_row[row]++;
+      nnonzero_row[col]++;
+      count += 2;
+    }
+  }
+
+  // set row_ptr
+  row_ptr[0] = 0;
+  for (i = 1; i < n + 1; i++) {
+    row_ptr[i] = row_ptr[i - 1] + nnonzero_row[i - 1];
+  }
+
+  // set nonzeros
+  *nonzeros = count;
+
+  return 1;
+}
+
+int get_mtx(FILE *fp, int *row_ptr, int *col_ind, int *fill, double *A,
+            double *ad) {
+  const int buf_len = 512;
+  char cbuf[buf_len];
+  int row, col;
+  double val;
+
+  // ignore comment
+  while (fgets(cbuf, sizeof(cbuf), fp) != NULL) {
+    if (cbuf[0] == '%') {
+      continue;
+    } else {
+      break;
+    }
+  }
+
+  // get matrix
+  while (fgets(cbuf, sizeof(cbuf), fp) != NULL) {
+    sscanf(cbuf, "%d %d %lf", &row, &col, &val);
+    row--;
+    col--;
+    if (row != col) {
+      col_ind[row_ptr[col] + fill[col]] = row;
+      A[row_ptr[col] + fill[col]] = val;
+      fill[col]++;
+
+      col_ind[row_ptr[row] + fill[row]] = col;
+      A[row_ptr[row] + fill[row]] = val;
+      fill[row]++;
+    } else {
+      col_ind[row_ptr[row] + fill[row]] = col;
+      A[row_ptr[row] + fill[row]] = val;
+      ad[row] = sqrt(val);
+      fill[row]++;
+    }
+  }
+
+  return 1;
 }
