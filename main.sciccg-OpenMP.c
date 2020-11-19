@@ -158,7 +158,7 @@ int main(int argc, char *argv[]) {
   char tmp[256];
   int i, j, k;
   int *nnonzero_row;
-  int n, nonzeros = 0;
+  int n, nonzeros;
   int row, col;
   double *ad;
   int flag = 1;
@@ -173,6 +173,7 @@ int main(int argc, char *argv[]) {
     return 0;
   }
   printf("%s\n", argv[1]);
+
   while (fgets(tmp, sizeof(tmp), fp) != NULL) {
     if (tmp[0] == '%') {
       continue;
@@ -208,56 +209,52 @@ int main(int argc, char *argv[]) {
   free(nnonzero_row);
   fclose(fp);
 
+  A = (double *)malloc(sizeof(double) * nonzeros);
+  col_ind = (int *)malloc(sizeof(int) * nonzeros);
+  fill = (int *)malloc(sizeof(int) * (n + 1));
+  ad = (double *)malloc(sizeof(double) * n);
+  for (i = 0; i < nonzeros; i++) {
+    A[i] = 0.0;
+    col_ind[i] = 0;
+  }
+  for (i = 0; i < n + 1; i++) {
+    fill[i] = 0;
+  }
+  for (i = 0; i < n; i++) {
+    ad[i] = 0.0;
+  }
+
   // next scan
   if ((fp = fopen(argv[1], "r")) == NULL) {
     printf("File open error!\n");
     return 0;
   }
-  // read file
-  flag = 1;
-  while (fgets(tmp, sizeof(tmp), fp)) {
+  while (fgets(tmp, sizeof(tmp), fp) != NULL) {
     if (tmp[0] == '%') {
-      /*ignore commments*/
+      continue;
     } else {
-      if (flag) {
-        sscanf(tmp, "%d %d %d", &n, &n, &j);
-        printf("n:%d nonzeros:%d\n", n, nonzeros);
-        A = (double *)malloc(sizeof(double) * nonzeros);
-        col_ind = (int *)malloc(sizeof(int) * nonzeros);
-        fill = (int *)malloc(sizeof(int) * (n + 1));
-        ad = (double *)malloc(sizeof(double) * n);
-        for (i = 0; i < nonzeros; i++) {
-          A[i] = 0.0;
-          col_ind[i] = 0;
-        }
-        for (i = 0; i < n + 1; i++) {
-          fill[i] = 0;
-        }
-        for (i = 0; i < n; i++) {
-          ad[i] = 0.0;
-        }
-        flag = 0;
-      } else {
-        sscanf(tmp, "%d %d %lf", &row, &col, &val);
-        row--;
-        col--;
-        if (row != col) {
-          col_ind[row_ptr[col] + fill[col]] = row;
-          A[row_ptr[col] + fill[col]] = val;
-          fill[col]++;
+      break;
+    }
+  }
+  while (fgets(tmp, sizeof(tmp), fp) != NULL) {
+    sscanf(tmp, "%d %d %lf", &row, &col, &val);
+    row--;
+    col--;
+    if (row != col) {
+      col_ind[row_ptr[col] + fill[col]] = row;
+      A[row_ptr[col] + fill[col]] = val;
+      fill[col]++;
 
-          col_ind[row_ptr[row] + fill[row]] = col;
-          A[row_ptr[row] + fill[row]] = val;
-          fill[row]++;
-        } else {
-          col_ind[row_ptr[row] + fill[row]] = col;
-          A[row_ptr[row] + fill[row]] = val;
-          ad[row] = sqrt(val);
-          fill[row]++;
-        }
-      }  // end scan row,col,val
-    }    // tmp[0] != %
-  }      // end while
+      col_ind[row_ptr[row] + fill[row]] = col;
+      A[row_ptr[row] + fill[row]] = val;
+      fill[row]++;
+    } else {
+      col_ind[row_ptr[row] + fill[row]] = col;
+      A[row_ptr[row] + fill[row]] = val;
+      ad[row] = sqrt(val);
+      fill[row]++;
+    }
+  }
 
   free(fill);
   fclose(fp);
