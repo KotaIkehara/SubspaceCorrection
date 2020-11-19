@@ -173,37 +173,33 @@ int main(int argc, char *argv[]) {
     return 0;
   }
   printf("%s\n", argv[1]);
-
-  nonzeros = 0;
-  // read file
-  while (fgets(tmp, sizeof(tmp), fp)) {
+  while (fgets(tmp, sizeof(tmp), fp) != NULL) {
     if (tmp[0] == '%') {
-      /*ignore commments*/
+      continue;
     } else {
-      if (flag) {
-        sscanf(tmp, "%d %d %d", &n, &n, &j);
-        nnonzero_row = (int *)malloc(sizeof(int) * n);
-        for (i = 0; i < n; i++) {
-          nnonzero_row[i] = 0;
-        }
-        flag = 0;
-      } else {
-        sscanf(tmp, "%d %d %lf", &row, &col, &val);
-        row--;
-        col--;
-        if (row == col) {
-          nnonzero_row[row]++;
-          nonzeros++;
-        } else {
-          nnonzero_row[row]++;
-          nnonzero_row[col]++;
-          nonzeros += 2;
-        }
-      }
+      sscanf(tmp, "%d %d %d", &n, &n, &j);
+      break;
     }
   }
 
+  nnonzero_row = (int *)malloc(sizeof(int) * n);
   row_ptr = (int *)malloc(sizeof(int) * (n + 1));
+
+  nonzeros = 0;
+  while (fgets(tmp, sizeof(tmp), fp) != NULL) {
+    sscanf(tmp, "%d %d %lf", &row, &col, &val);
+    row--;
+    col--;
+    if (row == col) {
+      nnonzero_row[row]++;
+      nonzeros++;
+    } else {
+      nnonzero_row[row]++;
+      nnonzero_row[col]++;
+      nonzeros += 2;
+    }
+  }
+
   row_ptr[0] = 0;
   for (i = 1; i < n + 1; i++) {
     row_ptr[i] = row_ptr[i - 1] + nnonzero_row[i - 1];
