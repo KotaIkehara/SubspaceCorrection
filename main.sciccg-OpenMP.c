@@ -8,6 +8,10 @@
 #include <time.h>
 
 double get_time(void);
+int get_mtx_info(FILE *fp, int n, int *nonzeros, int *row_ptr);
+int read_lines_integer(FILE *fp, int nsize, int *iarray);
+int read_lines_double(FILE *fp, int nsize, double *darray);
+
 void diagscale(int n, int *row_ptr, int *col_ind, double *A, double *ad);
 void fbsub(int *iuhead, int *iucol, double *u, int n, double *diag, double *z,
            double *r, int istart, int iend);
@@ -16,7 +20,6 @@ void mkbu(double *ad, double *A, int n, int *col_ind, int *row_ptr,
           int iend, int myid, double gamma, int *unnonzero, int procs);
 int bic(int n, double *diag, int *iuhead, int *iucol, double *u, int istart,
         int iend);
-int get_mtx_info(FILE *fp, int n, int *nonzeros, int *row_ptr);
 
 int main(int argc, char *argv[]) {
   int i, j, k;
@@ -27,63 +30,190 @@ int main(int argc, char *argv[]) {
   int n, nonzeros;
   double *ad;
 
-  if (argc != 4) {
-    printf("Usage: ./example.out <mtx_filename> <alpha> <m_max>\n");
+  /*--- Read JSOL Matrix ---*/
+  FILE *fpi, *fpv;
+  int row, col;
+  int *trow_ptr, *tcol_ind;
+  double *b, *Pvec, *val;
+  int *nnonzero_row;
+  int buf_len = 512;
+  char cbuf[buf_len];
+
+  // Index file
+  if ((fpi = fopen(argv[1], "r")) == NULL) {
     return 0;
   }
 
-  if ((fp = fopen(argv[1], "r")) == NULL) {
-    printf("File open error!\n");
+  printf("Reading JSOL matrix data...\n");
+
+  if (fgets(cbuf, sizeof(cbuf), fpi) != NULL) {
+    n = atoi(&cbuf[0]);
+    nonzeros = atoi(&cbuf[16]);
+  }
+
+  tcol_ind = (int *)malloc(sizeof(int) * nonzeros);
+  trow_ptr = (int *)malloc(sizeof(int) * (n + 1));
+  row_ptr = (int *)malloc(sizeof(int) * (n + 1));
+  nnonzero_row = (int *)malloc(sizeof(int) * n);
+  val = (double *)malloc(sizeof(double) * nonzeros);
+  b = (double *)malloc(sizeof(double) * n);
+  Pvec = (double *)malloc(sizeof(double) * n);
+
+  // read col_ind
+  read_lines_integer(fpi, nonzeros, &tcol_ind[0]);
+  // read nnonzero_row
+  read_lines_integer(fpi, n, &nnonzero_row[0]);
+  // read trow_ptr
+  read_lines_integer(fpi, n, &trow_ptr[0]);
+  trow_ptr[n] = trow_ptr[n - 1] + nnonzero_row[n - 1];
+
+  fclose(fpi);
+
+  // Value file
+  if ((fpv = fopen(argv[2], "r")) == NULL) {
     return 0;
   }
-  printf("%s\n", argv[1]);
 
-  while (fgets(tmp, sizeof(tmp), fp) != NULL) {
-    if (tmp[0] == '%') {
-      continue;  // ignore comment
-    } else {
-      sscanf(tmp, "%d %d %d", &n, &n, &j);
-      break;
+  // read A
+  read_lines_double(fpv, nonzeros, &val[0]);
+  // read b
+  read_lines_double(fpv, n, &b[0]);
+  // for (i = 0; i < n; i++) {
+  //   printf("%lf", b[i]);
+  // }
+  // read Pvec
+  read_lines_double(fpv, n, &Pvec[0]);
+
+  fclose(fpv);
+
+  // get nonzeros
+  for (i = 0; i < n; i++) {
+    nnonzero_row[i] = 0;
+  }
+  nonzeros = 0;
+  for (i = 0; i < n; i++) {
+    for (j = trow_ptr[i]; j < trow_ptr[i + 1]; j++) {
+      row = i;
+      col = tcol_ind[j - 1] - 1;
+      // printf("row: %d, col: %d\n", row, col);
+      if (row == col) {
+        nnonzero_row[row]++;
+        nonzeros++;
+      } else {
+        nnonzero_row[row]++;
+        nnonzero_row[col]++;
+        nonzeros += 2;
+      }
     }
   }
 
-  row_ptr = (int *)malloc(sizeof(int) * (n + 1));
-  // get nonzeros, row_ptr
-  get_mtx_info(fp, n, &nonzeros, &row_ptr[0]);
-  fclose(fp);
+  // set row_ptr
+  row_ptr[0] = 0;
+  for (i = 1; i < n + 1; i++) {
+    row_ptr[i] = row_ptr[i - 1] + nnonzero_row[i - 1];
+  }
+  free(nnonzero_row);
 
-  // malloc
-  A = (double *)malloc(sizeof(double) * nonzeros);
+  // for (i = 0; i < n + 1; i++) {
+  //   printf("%d ", row_ptr[i]);
+  // }
+  // printf("\n");
+
   col_ind = (int *)malloc(sizeof(int) * nonzeros);
-  fill = (int *)malloc(sizeof(int) * (n + 1));
+  A = (double *)malloc(sizeof(double) * nonzeros);
   ad = (double *)malloc(sizeof(double) * n);
-
+  fill = (int *)malloc(sizeof(int) * (n + 1));
   for (i = 0; i < n + 1; i++) {
     fill[i] = 0;
   }
 
-  if ((fp = fopen(argv[1], "r")) == NULL) {
-    printf("File open error!\n");
-    return 0;
+  // get matrix
+  for (i = 0; i < n; i++) {
+    for (j = trow_ptr[i]; j < trow_ptr[i + 1]; j++) {
+      row = i;
+      col = tcol_ind[j - 1] - 1;
+      if (row != col) {
+        col_ind[row_ptr[col] + fill[col]] = row;
+        A[row_ptr[col] + fill[col]] = val[j - 1];
+        fill[col]++;
+
+        col_ind[row_ptr[row] + fill[row]] = col;
+        A[row_ptr[row] + fill[row]] = val[j - 1];
+        fill[row]++;
+      } else {
+        col_ind[row_ptr[row] + fill[row]] = col;
+        A[row_ptr[row] + fill[row]] = val[j - 1];
+        ad[row] = sqrt(val[j - 1]);
+        fill[row]++;
+      }
+    }
   }
 
-  // get col_ind, A, ad
-  get_mtx(fp, row_ptr, &col_ind[0], &fill[0], &A[0], &ad[0]);
-
+  free(tcol_ind);
+  free(trow_ptr);
+  free(Pvec);
+  free(val);
   free(fill);
-  fclose(fp);
+  /*--- Read JSOL Matrix ---*/
+
+  /*--- Read SuiteSparse Matrix ---*/
+  // if (argc != 4) {
+  //   printf("Usage: ./example.out <mtx_filename> <alpha> <m_max>\n");
+  //   return 0;
+  // }
+
+  // if ((fp = fopen(argv[1], "r")) == NULL) {
+  //   printf("File open error!\n");
+  //   return 0;
+  // }
+  // printf("%s\n", argv[1]);
+
+  // while (fgets(tmp, sizeof(tmp), fp) != NULL) {
+  //   if (tmp[0] == '%') {
+  //     continue;  // ignore comment
+  //   } else {
+  //     sscanf(tmp, "%d %d %d", &n, &n, &j);
+  //     break;
+  //   }
+  // }
+
+  // row_ptr = (int *)malloc(sizeof(int) * (n + 1));
+  // // get nonzeros, row_ptr
+  // get_mtx_info(fp, n, &nonzeros, &row_ptr[0]);
+  // fclose(fp);
+
+  // // malloc
+  // A = (double *)malloc(sizeof(double) * nonzeros);
+  // col_ind = (int *)malloc(sizeof(int) * nonzeros);
+  // fill = (int *)malloc(sizeof(int) * (n + 1));
+  // ad = (double *)malloc(sizeof(double) * n);
+
+  // for (i = 0; i < n + 1; i++) {
+  //   fill[i] = 0;
+  // }
+
+  // if ((fp = fopen(argv[1], "r")) == NULL) {
+  //   printf("File open error!\n");
+  //   return 0;
+  // }
+
+  // // get col_ind, A, ad
+  // get_mtx(fp, row_ptr, &col_ind[0], &fill[0], &A[0], &ad[0]);
+
+  // free(fill);
+  // fclose(fp);
+  /*--- Read SuiteSparse Matrix ---*/
 
   diagscale(n, row_ptr, col_ind, A, ad);
-
   // b: right hand vector
-  double *b;
-  b = (double *)malloc(sizeof(double) * n);
-  for (i = 0; i < n; i++) {
-    b[i] = 1.0;
-  }
+  // double *b;
+  // b = (double *)malloc(sizeof(double) * n);
+  // for (i = 0; i < n; i++) {
+  //   b[i] = 1.0;
+  // }
   srand(1);
 
-  int nitecg = 5000, ite, zite;
+  int nitecg = 8000, ite, zite;
   double err = 1.0e-8;
 
   double *solx;
@@ -110,7 +240,8 @@ int main(int argc, char *argv[]) {
 
   double gamma, rnorm, bnorm;
   int h = 1, it, l, lmax;
-  int m = atoi(argv[3]);
+  int m = atoi(argv[4]);  // JSOL
+  // int m = atoi(argv[3]);  // SuiteSparse
   double *E;
   E = (double *)malloc(sizeof(double) * (n * m));
   lmax = ceil(log(nitecg) / log(m));
@@ -137,7 +268,8 @@ int main(int argc, char *argv[]) {
   double v;
   int total_ite = 0;
 
-  double threshold = -atof(argv[2]);
+  double threshold = -atof(argv[3]);  // JSOL
+  // double threshold = -atof(argv[2]);  // SuiteSparse
   int procs = omp_get_max_threads();
   int *unnonzero;
   unnonzero = (int *)malloc(sizeof(int) * (procs + 1));
@@ -173,7 +305,7 @@ int main(int argc, char *argv[]) {
 
       if (zite == 0) {
 #pragma omp single
-        { gamma = 1.0; }
+        { gamma = 1.1; }
 #pragma omp for
         for (i = 0; i < n; i++) {
           diag[i] = 0.0;
@@ -770,7 +902,7 @@ int bic(int n, double *diag, int *iuhead, int *iucol, double *u, int istart,
 
 int get_mtx_info(FILE *fp, int n, int *nonzeros, int *row_ptr) {
   int i;
-  const int buf_len = 512;
+  int buf_len = 512;
   char cbuf[buf_len];
   int row, col;
   double val;
@@ -808,7 +940,7 @@ int get_mtx_info(FILE *fp, int n, int *nonzeros, int *row_ptr) {
 
 int get_mtx(FILE *fp, int *row_ptr, int *col_ind, int *fill, double *A,
             double *ad) {
-  const int buf_len = 512;
+  int buf_len = 512;
   char cbuf[buf_len];
   int row, col;
   double val;
@@ -843,5 +975,85 @@ int get_mtx(FILE *fp, int *row_ptr, int *col_ind, int *fill, double *A,
     }
   }
 
+  return 1;
+}
+
+int read_lines_integer(FILE *fp, int nsize, int *iarray) {
+  int i, j;
+  int buf_len = 512;
+  char cbuf[buf_len];
+
+  int nline = (int)(nsize / 6);
+  int nodd = 0;
+  if (nline > 0) {
+    nodd = nsize % 6;
+  } else {
+    nodd = nsize;
+  }
+
+  int icnt = 0;
+
+  for (i = 0; i < nline; i++) {
+    if (fgets(cbuf, sizeof(cbuf), fp) != NULL) {
+      for (j = 0; j < 6; j++) {
+        iarray[icnt] = atoi(&cbuf[j * 12]);
+        icnt++;
+      }
+    } else {
+      break;
+    }
+  }
+  // last one line
+  if (nodd > 0) {
+    if (fgets(cbuf, sizeof(cbuf), fp) != NULL) {
+      for (j = 0; j < 6; j++) {
+        iarray[icnt] = atoi(&cbuf[j * 12]);
+        icnt++;
+        if (icnt == nsize) {
+          break;
+        }
+      }
+    }
+  }
+
+  return 1;
+}
+
+int read_lines_double(FILE *fp, int nsize, double *darray) {
+  int i, j;
+  int buf_len = 512;
+  char cbuf[buf_len];
+
+  int nline = (int)(nsize / 3);
+  int nodd = 0;
+  if (nline > 0) {
+    nodd = nsize % 3;
+  } else {
+    nodd = nsize;
+  }
+  int icnt = 0;
+
+  for (i = 0; i < nline; i++) {
+    if (fgets(cbuf, sizeof(cbuf), fp) != NULL) {
+      for (j = 0; j < 3; j++) {
+        darray[icnt] = atof(&cbuf[j * 32]);
+        icnt++;
+      }
+    } else {
+      break;
+    }
+  }
+  // last one line
+  if (nodd > 0) {
+    if (fgets(cbuf, sizeof(cbuf), fp) != NULL) {
+      for (j = 0; j < 3; j++) {
+        darray[icnt] = atof(&cbuf[j * 32]);
+        icnt++;
+        if (icnt == nsize) {
+          break;
+        }
+      }
+    }
+  }
   return 1;
 }
