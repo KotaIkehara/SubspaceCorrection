@@ -9,10 +9,10 @@
 
 double get_time(void);
 int get_mtx_info(FILE *fp, int n, int *nonzeros, int *row_ptr);
-int read_lines_integer(FILE *fp, int nsize, int *iarray);
-int read_lines_double(FILE *fp, int nsize, double *darray);
+int read_lines_integer(FILE *fp, const int nsize, int *iarray);
+int read_lines_double(FILE *fp, const int nsize, double *darray);
 
-void diagscale(int n, int *row_ptr, int *col_ind, double *A, double *ad);
+void diagscale(const int n, const int *row_ptr, const int *col_ind, double *A, double *ad);
 void fbsub(int *iuhead, int *iucol, double *u, int n, double *diag, double *z,
            double *r, int istart, int iend);
 void mkbu(double *ad, double *A, int n, int *col_ind, int *row_ptr,
@@ -26,7 +26,7 @@ int main(int argc, char *argv[]) {
   FILE *fp;
   int *row_ptr, *fill, *col_ind;
   double *A;
-  int buf_len = 512;
+  const int buf_len = 512;
   char cbuf[buf_len];
   int n, nonzeros;
   double *ad;
@@ -45,7 +45,8 @@ int main(int argc, char *argv[]) {
 
   // Index file
   if ((fpi = fopen(argv[1], "r")) == NULL) {
-    return 0;
+    printf("Error: Cannot open file: '%s'\n", argv[1]);
+    exit(1);
   }
 
   printf("%s\n", argv[1]);
@@ -75,7 +76,8 @@ int main(int argc, char *argv[]) {
 
   // Value file
   if ((fpv = fopen(argv[2], "r")) == NULL) {
-    return 0;
+    printf("Error: Cannot open file: '%s'\n", argv[2]);
+    exit(1);
   }
 
   // read A
@@ -87,6 +89,7 @@ int main(int argc, char *argv[]) {
   // }
   // read Pvec
   read_lines_double(fpv, n, &Pvec[0]);
+
 
   fclose(fpv);
 
@@ -155,7 +158,6 @@ int main(int argc, char *argv[]) {
 
   free(tcol_ind);
   free(trow_ptr);
-  free(Pvec);
   free(val);
   free(fill);
   /*--- Read JSOL Matrix ---*/
@@ -167,8 +169,8 @@ int main(int argc, char *argv[]) {
   // }
 
   // if ((fp = fopen(argv[1], "r")) == NULL) {
-  //   printf("File open error!\n");
-  //   return 0;
+    // printf("Error: Cannot open file: '%s'\n", argv[1]);
+    // exit(1);
   // }
   // printf("%s\n", argv[1]);
 
@@ -197,8 +199,8 @@ int main(int argc, char *argv[]) {
   // }
 
   // if ((fp = fopen(argv[1], "r")) == NULL) {
-  //   printf("File open error!\n");
-  //   return 0;
+    // printf("Error: Cannot open file: '%s'\n", argv[1]);
+    // exit(1);
   // }
 
   // // get col_ind, A, ad
@@ -219,7 +221,8 @@ int main(int argc, char *argv[]) {
 
   const int nitecg = 30000;
   const double err = 1.0e-8;
-  const double gamma = 1.1;
+  const double gamma = 1.05;// choke
+  // const double gamma = 1.35;// spiral
   int ite, zite;
 
   double *solx;
@@ -275,8 +278,8 @@ int main(int argc, char *argv[]) {
   int total_ite = 0;
 
   const double threshold = -atof(argv[3]);  // JSOL
-  // double threshold = -atof(argv[2]);  // SuiteSparse
-  int procs = omp_get_max_threads();
+  //const  double threshold = -atof(argv[2]);  // SuiteSparse
+  const int procs = omp_get_max_threads();
   int *unnonzero;
   unnonzero = (int *)malloc(sizeof(int) * (procs + 1));
 
@@ -349,7 +352,8 @@ int main(int argc, char *argv[]) {
         bnorm = 0.0;
         for (i = 0; i < n; i++) {
           // b[i] = rand() / (double)RAND_MAX;
-          bnorm += fabs(b[i]) * fabs(b[i]);
+          bnorm += fabs(Pvec[i]) * fabs(Pvec[i]); // JSOL
+          // bnorm += fabs(b[i]) * fabs(b[i]); // SuiteSparse
         }
       }
 
@@ -751,6 +755,7 @@ int main(int argc, char *argv[]) {
   free(A);
   free(solx);
   free(b);
+  free(Pvec);
   free(iuhead);
   free(iucol);
   free(u);
@@ -771,7 +776,7 @@ double get_time(void) {
 }
 
 // ad^(-1) * A * ad(-1)
-void diagscale(int n, int *row_ptr, int *col_ind, double *A, double *ad) {
+void diagscale(const int n, const int *row_ptr, const int *col_ind, double *A, double *ad) {
   int i, j, jj;
 
   for (i = 0; i < n; i++) {
@@ -986,7 +991,7 @@ int get_mtx(FILE *fp, int *row_ptr, int *col_ind, int *fill, double *A,
   return 1;
 }
 
-int read_lines_integer(FILE *fp, int nsize, int *iarray) {
+int read_lines_integer(FILE *fp, const int nsize, int *iarray) {
   int i, j;
   int buf_len = 512;
   char cbuf[buf_len];
@@ -1027,7 +1032,7 @@ int read_lines_integer(FILE *fp, int nsize, int *iarray) {
   return 1;
 }
 
-int read_lines_double(FILE *fp, int nsize, double *darray) {
+int read_lines_double(FILE *fp, const int nsize, double *darray) {
   int i, j;
   int buf_len = 512;
   char cbuf[buf_len];

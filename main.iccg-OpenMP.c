@@ -155,7 +155,6 @@ int main(int argc, char *argv[]) {
 
   free(tcol_ind);
   free(trow_ptr);
-  free(Pvec);
   free(val);
   free(fill);
   /*--- Read JSOL Matrix ---*/
@@ -219,7 +218,8 @@ int main(int argc, char *argv[]) {
 
   const int nitecg = 30000;
   const double err = 1.0e-8;
-  const double gamma = 1.1;
+  const double gamma = 1.05;// choke
+  // const double gamma = 1.35;// spiral
   int ite, zite;
 
   double *solx;
@@ -348,7 +348,8 @@ int main(int argc, char *argv[]) {
         bnorm = 0.0;
         for (i = 0; i < n; i++) {
           // b[i] = rand() / (double)RAND_MAX;
-          bnorm += fabs(b[i]) * fabs(b[i]);
+          bnorm += fabs(Pvec[i]) * fabs(Pvec[i]); // JSOL
+          // bnorm += fabs(b[i]) * fabs(b[i]);//SuiteSparse
         }
       }
 
@@ -532,6 +533,7 @@ int main(int argc, char *argv[]) {
   free(A);
   free(solx);
   free(b);
+  free(Pvec);
   free(iuhead);
   free(iucol);
   free(u);
