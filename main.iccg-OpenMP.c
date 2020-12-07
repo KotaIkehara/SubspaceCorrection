@@ -26,7 +26,8 @@ int main(int argc, char *argv[]) {
   FILE *fp;
   int *row_ptr, *fill, *col_ind;
   double *A;
-  char tmp[256];
+  int buf_len = 512;
+  char cbuf[buf_len];
   int n, nonzeros;
   double *ad;
 
@@ -36,15 +37,18 @@ int main(int argc, char *argv[]) {
   int *trow_ptr, *tcol_ind;
   double *b, *Pvec, *val;
   int *nnonzero_row;
-  int buf_len = 512;
-  char cbuf[buf_len];
+
+  if (argc != 5) {
+    printf("Usage: ./example.out <index_file> <coeff_file> <alpha> <m_max>\n");
+    exit(1);
+  }
 
   // Index file
   if ((fpi = fopen(argv[1], "r")) == NULL) {
     return 0;
   }
 
-  printf("Reading JSOL matrix data...\n");
+  printf("%s\n", argv[1]);
 
   if (fgets(cbuf, sizeof(cbuf), fpi) != NULL) {
     n = atoi(&cbuf[0]);
@@ -168,11 +172,11 @@ int main(int argc, char *argv[]) {
   // }
   // printf("%s\n", argv[1]);
 
-  // while (fgets(tmp, sizeof(tmp), fp) != NULL) {
-  //   if (tmp[0] == '%') {
+  // while (fgets(cbuf, sizeof(cbuf), fp) != NULL) {
+  //   if (cbuf[0] == '%') {
   //     continue;  // ignore comment
   //   } else {
-  //     sscanf(tmp, "%d %d %d", &n, &n, &j);
+  //     sscanf(cbuf, "%d %d %d", &n, &n, &j);
   //     break;
   //   }
   // }
@@ -213,9 +217,10 @@ int main(int argc, char *argv[]) {
   // }
   srand(1);
 
-  const int nitecg = 8000;
-  int ite, zite;
+  const int nitecg = 30000;
   const double err = 1.0e-8;
+  const double gamma = 1.1;
+  int ite, zite;
 
   double *solx;
   solx = (double *)malloc(sizeof(double) * n);
@@ -239,7 +244,7 @@ int main(int argc, char *argv[]) {
   diag = (double *)malloc(sizeof(double) * n);
   z = (double *)malloc(sizeof(double) * n);
 
-  double gamma, rnorm, bnorm;
+  double rnorm, bnorm;
   int h = 1, it, l, lmax;
   int m = atoi(argv[4]);  // JSOL
   // int m = atoi(argv[3]);  // SuiteSparse
@@ -250,7 +255,7 @@ int main(int argc, char *argv[]) {
   double *Bu;
   Bu = (double *)malloc(sizeof(double) * n);
   lapack_int info;
-  char sfile[256];
+  char sfile[buf_len];
   int m_max = m;
 
   double *B;
@@ -275,16 +280,15 @@ int main(int argc, char *argv[]) {
   int *unnonzero;
   unnonzero = (int *)malloc(sizeof(int) * (procs + 1));
 
-  char mtxname[256];
+  char mtxname[buf_len];
   strcpy(mtxname, argv[1] + 4);
 
   for (zite = 0; zite < 6; zite++) {
     if (zite == 1) {
-      sprintf(sfile, "%s.iccg.zite%d.theta%.1f.thread%d.dat", mtxname, zite,
-              -threshold, procs);
+      sprintf(sfile, "%s.iccg.zite%d.thread%d.dat", mtxname, zite, procs);
       fp = fopen(sfile, "w");
       fprintf(fp, "#ite residual of %s\n", argv[1]);
-      printf("Threshold: 10^(%.1f) Thread: %d\n", threshold, procs);
+      printf("Thread: %d\n", procs);
     }
     if (zite == 0) {
       t0 = get_time();
@@ -305,8 +309,6 @@ int main(int argc, char *argv[]) {
       }
 
       if (zite == 0) {
-#pragma omp single
-        { gamma = 1.1; }
 #pragma omp for
         for (i = 0; i < n; i++) {
           diag[i] = 0.0;
@@ -499,7 +501,6 @@ int main(int argc, char *argv[]) {
       }  // end parallel
 
       if (sqrt(rnorm / bnorm) < err) {
-        printf("zite: %d, 収束\n", zite);
         if (zite == 0) {
           t1 = get_time();
           printf("\nICCG ite: %d\n", ite);
@@ -507,6 +508,10 @@ int main(int argc, char *argv[]) {
         }
         if (zite > 0) total_ite = total_ite + ite;
         break;
+      } else if (sqrt(rnorm / bnorm) >= err && ite == nitecg) {
+        printf("residual: %.9f\n", sqrt(rnorm / bnorm));
+        printf("ICCG did NOT converge.\n");
+        exit(1);
       }
     }
     /*--- end ICCG ---*/
@@ -675,7 +680,7 @@ int bic(int n, double *diag, int *iuhead, int *iucol, double *u, int istart,
 
     if (fabs(diag[i]) < 0.001) {
       printf("diag error: i:%d, diag[i]:%lf\n", i, diag[i]);
-      return 0;
+      exit(1);
     }
   }
 
