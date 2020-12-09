@@ -191,9 +191,9 @@ int main(int argc, char *argv[]) {
 
   double rnorm, bnorm;
   int h = 1, it, l, lmax;
+  lmax = ceil(log(nitecg) / log(m));
   double *E;
   E = (double *)malloc(sizeof(double) * (n * m));
-  lmax = ceil(log(nitecg) / log(m));
 
   double *Bu;
   Bu = (double *)malloc(sizeof(double) * n);
@@ -225,15 +225,13 @@ int main(int argc, char *argv[]) {
   strcpy(mtxname, argv[1] + 4);
 
   for (zite = 0; zite < 6; zite++) {
+    if (zite == 0) t0 = get_time();
     if (zite == 1) {
       sprintf(sfile, "%s.sciccg.zite%d.theta%.1f.thread%d.dat", mtxname, zite,
               -threshold, procs);
       fp = fopen(sfile, "w");
       fprintf(fp, "#ite residual of %s\n", argv[1]);
       printf("Threshold: 10^(%.1f) Thread: %d\n", threshold, procs);
-    }
-    if (zite == 0) {
-      t0 = get_time();
     }
 
 #pragma omp parallel private(myid, istart, iend, interd)
@@ -281,9 +279,7 @@ int main(int argc, char *argv[]) {
         }
       }
 
-      if (zite == 1) {
-        ts = get_time();
-      }
+      if (zite == 1) ts = get_time();
 
 #pragma omp single
       {
@@ -417,6 +413,7 @@ int main(int argc, char *argv[]) {
         }
         /*--- end Subspace Correction ---*/
 
+        /*--- CG ---*/
 #pragma omp single
         {
           cgropp = cgrop;
@@ -478,13 +475,11 @@ int main(int argc, char *argv[]) {
         for (i = 0; i < n; i++) {
           rnorm += fabs(r[i]) * fabs(r[i]);
         }
-
-        if (zite == 1) {
-#pragma omp single
-          { fprintf(fp, "%d %.9f\n", ite, sqrt(rnorm / bnorm)); }
-        }
       }  // end parallel
 
+      if (zite == 1) {
+        fprintf(fp, "%d %.9f\n", ite, sqrt(rnorm / bnorm));
+      }
       if (sqrt(rnorm / bnorm) < err) {
         if (zite == 0) {
           t1 = get_time();
@@ -498,6 +493,7 @@ int main(int argc, char *argv[]) {
         printf("ICCG did NOT converge.\n");
         exit(1);
       }
+      /*--- CG ---*/
 
       if (zite == 0) {
         /*--- Selection of Approximate Solution Vectors ---*/
@@ -518,6 +514,7 @@ int main(int argc, char *argv[]) {
         /*--- end Selection of Approximate Solution Vectors ---*/
       }
     }
+    if (zite == 1) fclose(fp);
     /*--- end ICCG ---*/
 
     if (zite == 0) {
@@ -647,19 +644,18 @@ int main(int argc, char *argv[]) {
       double theta = pow(10, threshold);
 
       if (W[0] > theta) {
-        printf("Error: m_max = 0. Threshold is too small.");
-        return 0;
+        printf("Error: No error vector sampled. Threshold is too small.");
+        exit(1);
       }
       for (i = 0; i < m; i++) {
-        if (W[i] <= theta) {
-          m_max = i + 1;
-        } else {
+        if (W[i] > theta) {
+          m_max = i;
           break;
         }
       }
       printf("m_max = %d\n", m_max);
 
-      if (m_max != 0) {
+      if (m_max > 0) {
         cblas_dgemm(CblasColMajor, CblasNoTrans, CblasNoTrans, n, m_max, m, 1.0,
                     eq, n, X, m, 0.0, B, n);
 
@@ -671,9 +667,6 @@ int main(int argc, char *argv[]) {
         free(W);
         free(X2);
         free(Y);
-      }
-      if (zite == 1) {
-        fclose(fp);
       }
     }  // end if zite==0
   }
