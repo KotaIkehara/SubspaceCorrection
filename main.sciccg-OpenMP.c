@@ -8,11 +8,18 @@
 #include <time.h>
 
 double get_time(void);
-int get_mtx_info(FILE *fp, int n, int *nonzeros, int *row_ptr);
+int get_suitesparse_mtx(FILE *fp, int *row_ptr, int *col_ind, int *fill,
+                        double *A, double *ad);
+int get_suitesparse_mtx_info(FILE *fp, int n, int *nonzeros, int *row_ptr);
 int read_lines_integer(FILE *fp, const int nsize, int *iarray);
 int read_lines_double(FILE *fp, const int nsize, double *darray);
-
-void diagscale(const int n, const int *row_ptr, const int *col_ind, double *A, double *ad);
+int get_jsol_mtx_info(const int n, const int *trow_ptr, const int *tcol_ind,
+                      int *nonzeros, int *row_ptr);
+int get_jsol_mtx(const int n, const double *val, const int *trow_ptr,
+                 const int *tcol_ind, const int *row_ptr, int *col_ind,
+                 double *A, double *ad);
+void diagscale(const int n, const int *row_ptr, const int *col_ind, double *A,
+               double *ad);
 void fbsub(int *iuhead, int *iucol, double *u, int n, double *diag, double *z,
            double *r, int istart, int iend);
 void mkbu(double *ad, double *A, int n, int *col_ind, int *row_ptr,
@@ -32,197 +39,147 @@ int main(int argc, char *argv[]) {
   double *ad;
 
   /*--- Read JSOL Matrix ---*/
-  FILE *fpi, *fpv;
-  int row, col;
-  int *trow_ptr, *tcol_ind;
-  double *b, *Pvec, *val;
-  int *nnonzero_row;
+  // FILE *fpi, *fpv;
+  // int *trow_ptr, *tcol_ind;
+  // double *b, *Pvec, *val;
+  // int *nnonzero_row;
 
-  if (argc != 5) {
-    printf("Usage: ./example.out <index_file> <coeff_file> <alpha> <m_max>\n");
-    exit(1);
+  // if (argc != 5) {
+  //   printf("Usage: ./example.out <index_file> <coeff_file> <alpha>
+  //   <m_max>\n"); exit(1);
+  // }
+
+  // // Index file
+  // if ((fpi = fopen(argv[1], "r")) == NULL) {
+  //   printf("Error: Cannot open file: '%s'\n", argv[1]);
+  //   exit(1);
+  // }
+  // printf("%s\n", argv[1]);
+
+  // if (fgets(cbuf, sizeof(cbuf), fpi) != NULL) {
+  //   n = atoi(&cbuf[0]);
+  //   nonzeros = atoi(&cbuf[16]);
+  // }
+
+  // tcol_ind = (int *)malloc(sizeof(int) * nonzeros);
+  // trow_ptr = (int *)malloc(sizeof(int) * (n + 1));
+
+  // row_ptr = (int *)malloc(sizeof(int) * (n + 1));
+  // nnonzero_row = (int *)malloc(sizeof(int) * n);
+  // val = (double *)malloc(sizeof(double) * nonzeros);
+  // b = (double *)malloc(sizeof(double) * n);
+  // Pvec = (double *)malloc(sizeof(double) * n);
+
+  // // read col_ind
+  // read_lines_integer(fpi, nonzeros, &tcol_ind[0]);
+  // // read nnonzero_row
+  // read_lines_integer(fpi, n, &nnonzero_row[0]);
+  // // read trow_ptr
+  // read_lines_integer(fpi, n, &trow_ptr[0]);
+  // trow_ptr[n] = trow_ptr[n - 1] + nnonzero_row[n - 1];
+
+  // fclose(fpi);
+
+  // // Coeff file
+  // if ((fpv = fopen(argv[2], "r")) == NULL) {
+  //   printf("Error: Cannot open file: '%s'\n", argv[2]);
+  //   exit(1);
+  // }
+  // // read A
+  // read_lines_double(fpv, nonzeros, &val[0]);
+  // // read b
+  // read_lines_double(fpv, n, &b[0]);
+  // // read Pvec
+  // read_lines_double(fpv, n, &Pvec[0]);
+
+  // fclose(fpv);
+
+  // get_jsol_mtx_info(n, &trow_ptr[0], &tcol_ind[0], &nonzeros, &row_ptr[0]);
+
+  // col_ind = (int *)malloc(sizeof(int) * nonzeros);
+  // A = (double *)malloc(sizeof(double) * nonzeros);
+  // ad = (double *)malloc(sizeof(double) * n);
+
+  // get_jsol_mtx(n, &val[0], &trow_ptr[0], &tcol_ind[0], &row_ptr[0],
+  // &col_ind[0],
+  //              &A[0], &ad[0]);
+
+  // free(tcol_ind);
+  // free(trow_ptr);
+  // free(val);
+  /*--- Read JSOL Matrix ---*/
+
+  /*--- Read SuiteSparse Matrix ---*/
+  if (argc != 4) {
+    printf("Usage: ./example.out <mtx_filename> <alpha> <m_max>\n");
+    return 0;
   }
 
-  // Index file
-  if ((fpi = fopen(argv[1], "r")) == NULL) {
+  if ((fp = fopen(argv[1], "r")) == NULL) {
     printf("Error: Cannot open file: '%s'\n", argv[1]);
     exit(1);
   }
-
   printf("%s\n", argv[1]);
 
-  if (fgets(cbuf, sizeof(cbuf), fpi) != NULL) {
-    n = atoi(&cbuf[0]);
-    nonzeros = atoi(&cbuf[16]);
-  }
-
-  tcol_ind = (int *)malloc(sizeof(int) * nonzeros);
-  trow_ptr = (int *)malloc(sizeof(int) * (n + 1));
-  row_ptr = (int *)malloc(sizeof(int) * (n + 1));
-  nnonzero_row = (int *)malloc(sizeof(int) * n);
-  val = (double *)malloc(sizeof(double) * nonzeros);
-  b = (double *)malloc(sizeof(double) * n);
-  Pvec = (double *)malloc(sizeof(double) * n);
-
-  // read col_ind
-  read_lines_integer(fpi, nonzeros, &tcol_ind[0]);
-  // read nnonzero_row
-  read_lines_integer(fpi, n, &nnonzero_row[0]);
-  // read trow_ptr
-  read_lines_integer(fpi, n, &trow_ptr[0]);
-  trow_ptr[n] = trow_ptr[n - 1] + nnonzero_row[n - 1];
-
-  fclose(fpi);
-
-  // Value file
-  if ((fpv = fopen(argv[2], "r")) == NULL) {
-    printf("Error: Cannot open file: '%s'\n", argv[2]);
-    exit(1);
-  }
-
-  // read A
-  read_lines_double(fpv, nonzeros, &val[0]);
-  // read b
-  read_lines_double(fpv, n, &b[0]);
-  // for (i = 0; i < n; i++) {
-  //   printf("%lf", b[i]);
-  // }
-  // read Pvec
-  read_lines_double(fpv, n, &Pvec[0]);
-
-
-  fclose(fpv);
-
-  // get nonzeros
-  for (i = 0; i < n; i++) {
-    nnonzero_row[i] = 0;
-  }
-  nonzeros = 0;
-  for (i = 0; i < n; i++) {
-    for (j = trow_ptr[i]; j < trow_ptr[i + 1]; j++) {
-      row = i;
-      col = tcol_ind[j - 1] - 1;
-      // printf("row: %d, col: %d\n", row, col);
-      if (row == col) {
-        nnonzero_row[row]++;
-        nonzeros++;
-      } else {
-        nnonzero_row[row]++;
-        nnonzero_row[col]++;
-        nonzeros += 2;
-      }
+  while (fgets(cbuf, sizeof(cbuf), fp) != NULL) {
+    if (cbuf[0] == '%') {
+      continue;  // ignore comment
+    } else {
+      sscanf(cbuf, "%d %d %d", &n, &n, &j);
+      break;
     }
   }
 
-  // set row_ptr
-  row_ptr[0] = 0;
-  for (i = 1; i < n + 1; i++) {
-    row_ptr[i] = row_ptr[i - 1] + nnonzero_row[i - 1];
-  }
-  free(nnonzero_row);
+  row_ptr = (int *)malloc(sizeof(int) * (n + 1));
+  // get nonzeros, row_ptr
+  get_suitesparse_mtx_info(fp, n, &nonzeros, &row_ptr[0]);
+  fclose(fp);
 
-  // for (i = 0; i < n + 1; i++) {
-  //   printf("%d ", row_ptr[i]);
-  // }
-  // printf("\n");
-
-  col_ind = (int *)malloc(sizeof(int) * nonzeros);
+  // malloc
   A = (double *)malloc(sizeof(double) * nonzeros);
-  ad = (double *)malloc(sizeof(double) * n);
+  col_ind = (int *)malloc(sizeof(int) * nonzeros);
   fill = (int *)malloc(sizeof(int) * (n + 1));
+  ad = (double *)malloc(sizeof(double) * n);
+
   for (i = 0; i < n + 1; i++) {
     fill[i] = 0;
   }
 
-  // get matrix
-  for (i = 0; i < n; i++) {
-    for (j = trow_ptr[i]; j < trow_ptr[i + 1]; j++) {
-      row = i;
-      col = tcol_ind[j - 1] - 1;
-      if (row != col) {
-        col_ind[row_ptr[col] + fill[col]] = row;
-        A[row_ptr[col] + fill[col]] = val[j - 1];
-        fill[col]++;
-
-        col_ind[row_ptr[row] + fill[row]] = col;
-        A[row_ptr[row] + fill[row]] = val[j - 1];
-        fill[row]++;
-      } else {
-        col_ind[row_ptr[row] + fill[row]] = col;
-        A[row_ptr[row] + fill[row]] = val[j - 1];
-        ad[row] = sqrt(val[j - 1]);
-        fill[row]++;
-      }
-    }
+  if ((fp = fopen(argv[1], "r")) == NULL) {
+    printf("Error: Cannot open file: '%s'\n", argv[1]);
+    exit(1);
   }
 
-  free(tcol_ind);
-  free(trow_ptr);
-  free(val);
+  // get col_ind, A, ad
+  get_suitesparse_mtx(fp, row_ptr, &col_ind[0], &fill[0], &A[0], &ad[0]);
+
   free(fill);
-  /*--- Read JSOL Matrix ---*/
-
-  /*--- Read SuiteSparse Matrix ---*/
-  // if (argc != 4) {
-  //   printf("Usage: ./example.out <mtx_filename> <alpha> <m_max>\n");
-  //   return 0;
-  // }
-
-  // if ((fp = fopen(argv[1], "r")) == NULL) {
-    // printf("Error: Cannot open file: '%s'\n", argv[1]);
-    // exit(1);
-  // }
-  // printf("%s\n", argv[1]);
-
-  // while (fgets(cbuf, sizeof(cbuf), fp) != NULL) {
-  //   if (cbuf[0] == '%') {
-  //     continue;  // ignore comment
-  //   } else {
-  //     sscanf(cbuf, "%d %d %d", &n, &n, &j);
-  //     break;
-  //   }
-  // }
-
-  // row_ptr = (int *)malloc(sizeof(int) * (n + 1));
-  // // get nonzeros, row_ptr
-  // get_mtx_info(fp, n, &nonzeros, &row_ptr[0]);
-  // fclose(fp);
-
-  // // malloc
-  // A = (double *)malloc(sizeof(double) * nonzeros);
-  // col_ind = (int *)malloc(sizeof(int) * nonzeros);
-  // fill = (int *)malloc(sizeof(int) * (n + 1));
-  // ad = (double *)malloc(sizeof(double) * n);
-
-  // for (i = 0; i < n + 1; i++) {
-  //   fill[i] = 0;
-  // }
-
-  // if ((fp = fopen(argv[1], "r")) == NULL) {
-    // printf("Error: Cannot open file: '%s'\n", argv[1]);
-    // exit(1);
-  // }
-
-  // // get col_ind, A, ad
-  // get_mtx(fp, row_ptr, &col_ind[0], &fill[0], &A[0], &ad[0]);
-
-  // free(fill);
-  // fclose(fp);
+  fclose(fp);
   /*--- Read SuiteSparse Matrix ---*/
 
   diagscale(n, row_ptr, col_ind, A, ad);
-  // b: right hand vector
-  // double *b;
-  // b = (double *)malloc(sizeof(double) * n);
-  // for (i = 0; i < n; i++) {
-  //   b[i] = 1.0;
-  // }
+
+  // SuiteSparse
+  // b:right hand vector
+  double *b;
+  b = (double *)malloc(sizeof(double) * n);
+  for (i = 0; i < n; i++) {
+    b[i] = 1.0;
+  }
   srand(1);
 
   const int nitecg = 30000;
   const double err = 1.0e-8;
-  const double gamma = 1.05;// choke
-  // const double gamma = 1.35;// spiral
+
+  // const double threshold = -atof(argv[3]);  // JSOL
+  // int m = atoi(argv[4]);                    // JSOL
+  // const double gamma = 1.05;                // JSOL-choke
+  // const double gamma = 1.35;                // JSOL-spiral
+
+  const double threshold = -atof(argv[2]);  // SuiteSparse
+  int m = atoi(argv[3]);                    // SuiteSparse
+  const double gamma = 1.0;                 // SuiteSparse
+
   int ite, zite;
 
   double *solx;
@@ -249,8 +206,6 @@ int main(int argc, char *argv[]) {
 
   double rnorm, bnorm;
   int h = 1, it, l, lmax;
-  int m = atoi(argv[4]);  // JSOL
-  // int m = atoi(argv[3]);  // SuiteSparse
   double *E;
   E = (double *)malloc(sizeof(double) * (n * m));
   lmax = ceil(log(nitecg) / log(m));
@@ -277,8 +232,6 @@ int main(int argc, char *argv[]) {
   double v;
   int total_ite = 0;
 
-  const double threshold = -atof(argv[3]);  // JSOL
-  //const  double threshold = -atof(argv[2]);  // SuiteSparse
   const int procs = omp_get_max_threads();
   int *unnonzero;
   unnonzero = (int *)malloc(sizeof(int) * (procs + 1));
@@ -352,8 +305,8 @@ int main(int argc, char *argv[]) {
         bnorm = 0.0;
         for (i = 0; i < n; i++) {
           // b[i] = rand() / (double)RAND_MAX;
-          bnorm += fabs(Pvec[i]) * fabs(Pvec[i]); // JSOL
-          // bnorm += fabs(b[i]) * fabs(b[i]); // SuiteSparse
+          // bnorm += fabs(Pvec[i]) * fabs(Pvec[i]);  // JSOL
+          bnorm += fabs(b[i]) * fabs(b[i]);  // SuiteSparse
         }
       }
 
@@ -755,7 +708,7 @@ int main(int argc, char *argv[]) {
   free(A);
   free(solx);
   free(b);
-  free(Pvec);
+  // free(Pvec); // JSOL
   free(iuhead);
   free(iucol);
   free(u);
@@ -776,7 +729,8 @@ double get_time(void) {
 }
 
 // ad^(-1) * A * ad(-1)
-void diagscale(const int n, const int *row_ptr, const int *col_ind, double *A, double *ad) {
+void diagscale(const int n, const int *row_ptr, const int *col_ind, double *A,
+               double *ad) {
   int i, j, jj;
 
   for (i = 0; i < n; i++) {
@@ -913,7 +867,7 @@ int bic(int n, double *diag, int *iuhead, int *iucol, double *u, int istart,
   return 1;
 }
 
-int get_mtx_info(FILE *fp, int n, int *nonzeros, int *row_ptr) {
+int get_suitesparse_mtx_info(FILE *fp, int n, int *nonzeros, int *row_ptr) {
   int i;
   int buf_len = 512;
   char cbuf[buf_len];
@@ -951,8 +905,8 @@ int get_mtx_info(FILE *fp, int n, int *nonzeros, int *row_ptr) {
   return 1;
 }
 
-int get_mtx(FILE *fp, int *row_ptr, int *col_ind, int *fill, double *A,
-            double *ad) {
+int get_suitesparse_mtx(FILE *fp, int *row_ptr, int *col_ind, int *fill,
+                        double *A, double *ad) {
   int buf_len = 512;
   char cbuf[buf_len];
   int row, col;
@@ -1068,5 +1022,85 @@ int read_lines_double(FILE *fp, const int nsize, double *darray) {
       }
     }
   }
+  return 1;
+}
+
+int get_jsol_mtx_info(const int n, const int *trow_ptr, const int *tcol_ind,
+                      int *nonzeros, int *row_ptr) {
+  int i, j;
+  int row, col;
+  int *nnonzero_row;
+  int count;
+
+  nnonzero_row = (int *)malloc(sizeof(int) * n);
+
+  for (i = 0; i < n; i++) {
+    nnonzero_row[i] = 0;
+  }
+  count = 0;
+  for (i = 0; i < n; i++) {
+    for (j = trow_ptr[i]; j < trow_ptr[i + 1]; j++) {
+      row = i;
+      col = tcol_ind[j - 1] - 1;
+      // printf("row: %d, col: %d\n", row, col);
+      if (row == col) {
+        nnonzero_row[row]++;
+        count++;
+      } else {
+        nnonzero_row[row]++;
+        nnonzero_row[col]++;
+        count += 2;
+      }
+    }
+  }
+
+  // set row_ptr
+  row_ptr[0] = 0;
+  for (i = 1; i < n + 1; i++) {
+    row_ptr[i] = row_ptr[i - 1] + nnonzero_row[i - 1];
+  }
+
+  free(nnonzero_row);
+
+  *nonzeros = count;
+
+  return 1;
+}
+
+int get_jsol_mtx(const int n, const double *val, const int *trow_ptr,
+                 const int *tcol_ind, const int *row_ptr, int *col_ind,
+                 double *A, double *ad) {
+  int i, j;
+  int row, col;
+  int *fill;
+
+  fill = (int *)malloc(sizeof(int) * (n + 1));
+  for (i = 0; i < n + 1; i++) {
+    fill[i] = 0;
+  }
+
+  for (i = 0; i < n; i++) {
+    for (j = trow_ptr[i]; j < trow_ptr[i + 1]; j++) {
+      row = i;
+      col = tcol_ind[j - 1] - 1;
+      if (row != col) {
+        col_ind[row_ptr[col] + fill[col]] = row;
+        A[row_ptr[col] + fill[col]] = val[j - 1];
+        fill[col]++;
+
+        col_ind[row_ptr[row] + fill[row]] = col;
+        A[row_ptr[row] + fill[row]] = val[j - 1];
+        fill[row]++;
+      } else {
+        col_ind[row_ptr[row] + fill[row]] = col;
+        A[row_ptr[row] + fill[row]] = val[j - 1];
+        ad[row] = sqrt(val[j - 1]);
+        fill[row]++;
+      }
+    }
+  }
+
+  free(fill);
+
   return 1;
 }
