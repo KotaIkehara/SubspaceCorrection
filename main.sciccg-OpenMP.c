@@ -8,9 +8,10 @@
 #include <time.h>
 
 double get_time(void);
-int get_suitesparse_mtx(FILE *fp, int *row_ptr, int *col_ind, int *fill,
+int get_suitesparse_mtx(FILE *fp, const int n, int *row_ptr, int *col_ind,
                         double *A, double *ad);
 int get_suitesparse_mtx_info(FILE *fp, int n, int *nonzeros, int *row_ptr);
+
 int read_lines_integer(FILE *fp, const int nsize, int *iarray);
 int read_lines_double(FILE *fp, const int nsize, double *darray);
 int get_jsol_mtx_info(const int n, const int *trow_ptr, const int *tcol_ind,
@@ -18,6 +19,7 @@ int get_jsol_mtx_info(const int n, const int *trow_ptr, const int *tcol_ind,
 int get_jsol_mtx(const int n, const double *val, const int *trow_ptr,
                  const int *tcol_ind, const int *row_ptr, int *col_ind,
                  double *A, double *ad);
+
 void diagscale(const int n, const int *row_ptr, const int *col_ind, double *A,
                double *ad);
 void fbsub(int *iuhead, int *iucol, double *u, int n, double *diag, double *z,
@@ -30,23 +32,26 @@ int bic(int n, double *diag, int *iuhead, int *iucol, double *u, int istart,
 
 int main(int argc, char *argv[]) {
   int i, j, k;
+
+  int n, nonzeros;
+  int *row_ptr, *col_ind;
+  double *A, *ad;
+  double *b;
+
   FILE *fp;
-  int *row_ptr, *fill, *col_ind;
-  double *A;
   const int buf_len = 512;
   char cbuf[buf_len];
-  int n, nonzeros;
-  double *ad;
 
   /*--- Read JSOL Matrix ---*/
   // FILE *fpi, *fpv;
   // int *trow_ptr, *tcol_ind;
-  // double *b, *Pvec, *val;
+  // double *Pvec, *val;
   // int *nnonzero_row;
 
   // if (argc != 5) {
   //   printf("Usage: ./example.out <index_file> <coeff_file> <alpha>
-  //   <m_max>\n"); exit(1);
+  //   <m_max>\n");
+  //   exit(1);
   // }
 
   // // Index file
@@ -70,14 +75,10 @@ int main(int argc, char *argv[]) {
   // b = (double *)malloc(sizeof(double) * n);
   // Pvec = (double *)malloc(sizeof(double) * n);
 
-  // // read col_ind
   // read_lines_integer(fpi, nonzeros, &tcol_ind[0]);
-  // // read nnonzero_row
   // read_lines_integer(fpi, n, &nnonzero_row[0]);
-  // // read trow_ptr
   // read_lines_integer(fpi, n, &trow_ptr[0]);
   // trow_ptr[n] = trow_ptr[n - 1] + nnonzero_row[n - 1];
-
   // fclose(fpi);
 
   // // Coeff file
@@ -85,13 +86,9 @@ int main(int argc, char *argv[]) {
   //   printf("Error: Cannot open file: '%s'\n", argv[2]);
   //   exit(1);
   // }
-  // // read A
   // read_lines_double(fpv, nonzeros, &val[0]);
-  // // read b
   // read_lines_double(fpv, n, &b[0]);
-  // // read Pvec
   // read_lines_double(fpv, n, &Pvec[0]);
-
   // fclose(fpv);
 
   // get_jsol_mtx_info(n, &trow_ptr[0], &tcol_ind[0], &nonzeros, &row_ptr[0]);
@@ -101,8 +98,7 @@ int main(int argc, char *argv[]) {
   // ad = (double *)malloc(sizeof(double) * n);
 
   // get_jsol_mtx(n, &val[0], &trow_ptr[0], &tcol_ind[0], &row_ptr[0],
-  // &col_ind[0],
-  //              &A[0], &ad[0]);
+  // &col_ind[0], &A[0], &ad[0]);
 
   // free(tcol_ind);
   // free(trow_ptr);
@@ -135,15 +131,9 @@ int main(int argc, char *argv[]) {
   get_suitesparse_mtx_info(fp, n, &nonzeros, &row_ptr[0]);
   fclose(fp);
 
-  // malloc
   A = (double *)malloc(sizeof(double) * nonzeros);
   col_ind = (int *)malloc(sizeof(int) * nonzeros);
-  fill = (int *)malloc(sizeof(int) * (n + 1));
   ad = (double *)malloc(sizeof(double) * n);
-
-  for (i = 0; i < n + 1; i++) {
-    fill[i] = 0;
-  }
 
   if ((fp = fopen(argv[1], "r")) == NULL) {
     printf("Error: Cannot open file: '%s'\n", argv[1]);
@@ -151,17 +141,13 @@ int main(int argc, char *argv[]) {
   }
 
   // get col_ind, A, ad
-  get_suitesparse_mtx(fp, row_ptr, &col_ind[0], &fill[0], &A[0], &ad[0]);
-
-  free(fill);
+  get_suitesparse_mtx(fp, n, row_ptr, &col_ind[0], &A[0], &ad[0]);
   fclose(fp);
   /*--- Read SuiteSparse Matrix ---*/
 
   diagscale(n, row_ptr, col_ind, A, ad);
 
-  // SuiteSparse
-  // b:right hand vector
-  double *b;
+  // SuiteSparse b:right hand vector
   b = (double *)malloc(sizeof(double) * n);
   for (i = 0; i < n; i++) {
     b[i] = 1.0;
@@ -181,7 +167,6 @@ int main(int argc, char *argv[]) {
   const double gamma = 1.0;                 // SuiteSparse
 
   int ite, zite;
-
   double *solx;
   solx = (double *)malloc(sizeof(double) * n);
 
@@ -905,12 +890,19 @@ int get_suitesparse_mtx_info(FILE *fp, int n, int *nonzeros, int *row_ptr) {
   return 1;
 }
 
-int get_suitesparse_mtx(FILE *fp, int *row_ptr, int *col_ind, int *fill,
+int get_suitesparse_mtx(FILE *fp, const int n, int *row_ptr, int *col_ind,
                         double *A, double *ad) {
   int buf_len = 512;
   char cbuf[buf_len];
+  int i;
   int row, col;
   double val;
+  int *fill;
+
+  fill = (int *)malloc(sizeof(int) * (n + 1));
+  for (i = 0; i < n + 1; i++) {
+    fill[i] = 0;
+  }
 
   // ignore comment
   while (fgets(cbuf, sizeof(cbuf), fp) != NULL) {
@@ -942,6 +934,7 @@ int get_suitesparse_mtx(FILE *fp, int *row_ptr, int *col_ind, int *fill,
     }
   }
 
+  free(fill);
   return 1;
 }
 
