@@ -31,6 +31,8 @@ int bic(int n, double *diag, int *iuhead, int *iucol, double *u, int istart,
         int iend);
 int sampling(const int n, const int m, const int ite, const int lmax,
              const double *solx, int *h, double *E);
+int checkEigenPair(const int m, const double *X, const double *X2,
+                   const double *W);
 
 int main(int argc, char *argv[]) {
   int i, j, k;
@@ -558,12 +560,11 @@ int main(int argc, char *argv[]) {
       }  // end of parallel region
 
       /*--- E^T*A*E---*/
-      double *ae, *X, *W, *X2, *Y, temp;
+      double *ae, *X, *W, *X2;
       ae = (double *)malloc(sizeof(double) * (n * m));
       X = (double *)malloc(sizeof(double) * (m * m));
       W = (double *)malloc(m * sizeof(double));
       X2 = (double *)malloc(sizeof(double) * (m * m));
-      Y = (double *)malloc(m * sizeof(double));
 
 #pragma omp parallel private(i)
       {
@@ -596,39 +597,9 @@ int main(int argc, char *argv[]) {
       info = LAPACKE_dsyev(LAPACK_COL_MAJOR, 'V', 'U', m, X, m, W);
       if (info != 0) {
         printf("info = %d\n", info);  // error check
+        exit(1);
       } else {
-        // check the result
-        // printf("-- check the residual of each eigenpair --\n");
-        for (k = 0; k < m; k++) {
-          for (i = 0; i < m; i++) {
-            Y[i] = 0.0;
-            for (j = 0; j < m; j++) {
-              Y[i] += X2[j * m + i] * X[k * m + j];
-            }
-          }
-          temp = 0.0;
-          for (i = 0; i < m; i++) {
-            temp +=
-                (Y[i] - (W[k] * X[k * m + i])) * (Y[i] - (W[k] * X[k * m + i]));
-          }
-          temp = sqrt(temp);
-
-          // printf("[%3d] eigenvalue = %8.3e, || Ax - wx ||_2 =
-          // %8.3e\n", k
-          // + 1, W[k], temp);
-        }
-
-        // printf("-- check the orthogonality of eigenvectors --\n");
-        for (k = 0; k < m; k++) {
-          for (j = k; j < m; j++) {
-            temp = 0.0;
-            for (i = 0; i < m; i++) {
-              temp += X[k * m + i] * X[j * m + i];
-            }
-            // printf("x[%3d]^T x[%3d] = %8.3e\n", k + 1, j + 1,
-            // temp);
-          }
-        }
+        checkEigenPair(m, X, X2, W);
       }
       /*--- end E^T*A*E---*/
       double theta = pow(10, threshold);
@@ -656,7 +627,6 @@ int main(int argc, char *argv[]) {
         free(X);
         free(W);
         free(X2);
-        free(Y);
       }
     }  // end if zite==0
   }
@@ -1104,5 +1074,44 @@ int sampling(const int n, const int m, const int ite, const int lmax,
   }
 
   *h = hnext;
+  return 1;
+}
+
+int checkEigenPair(const int m, const double *X, const double *X2,
+                   const double *W) {
+  int i, j, k;
+  double temp;
+  double *Y;
+  Y = (double *)malloc(m * sizeof(double));
+
+  printf("-- check the residual of each eigenpair --\n");
+  for (k = 0; k < m; k++) {
+    for (i = 0; i < m; i++) {
+      Y[i] = 0.0;
+      for (j = 0; j < m; j++) {
+        Y[i] += X2[j * m + i] * X[k * m + j];
+      }
+    }
+    temp = 0.0;
+    for (i = 0; i < m; i++) {
+      temp += (Y[i] - (W[k] * X[k * m + i])) * (Y[i] - (W[k] * X[k * m + i]));
+    }
+    temp = sqrt(temp);
+
+    printf("[%3d] eigenvalue = %8.3e, || Ax - wx ||_2 =% 8.3e\n ", k + 1, W[k],
+           temp);
+  }
+
+  printf("-- check the orthogonality of eigenvectors --\n");
+  for (k = 0; k < m; k++) {
+    for (j = k; j < m; j++) {
+      temp = 0.0;
+      for (i = 0; i < m; i++) {
+        temp += X[k * m + i] * X[j * m + i];
+      }
+      printf("x[%3d]^T x[%3d] = %8.3e\n", k + 1, j + 1, temp);
+    }
+  }
+  free(Y);
   return 1;
 }
