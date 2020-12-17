@@ -8,6 +8,8 @@
 #include <time.h>
 
 double get_time(void);
+
+int get_suitesparse_n(FILE *fp);
 int get_suitesparse_mtx(FILE *fp, const int n, int *row_ptr, int *col_ind,
                         double *A, double *ad);
 int get_suitesparse_mtx_info(FILE *fp, int n, int *nonzeros, int *row_ptr);
@@ -33,6 +35,10 @@ int sampling(const int n, const int m, const int ite, const int lmax,
              const double *solx, int *h, double *E);
 int checkEigenPair(const int m, const double *X, const double *X2,
                    const double *W);
+void constructMappingOperator(const int n, const int m, int *m_max,
+                              const double theta, double *A, const int *row_ptr,
+                              const int *col_ind, double *B, double *E,
+                              double *solx);
 
 int main(int argc, char *argv[]) {
   int i, j, k;
@@ -44,26 +50,31 @@ int main(int argc, char *argv[]) {
 
   FILE *fp;
   const int buf_len = 512;
-  char cbuf[buf_len];
+  char cbuf[buf_len], MTX_PATH[buf_len];
+
+  if (argc != 3) {
+    printf("Usage: ./example.out <alpha> <m>\n");
+    exit(1);
+  }
 
   /*--- Read JSOL Matrix ---*/
   // FILE *fpi, *fpv;
   // int *trow_ptr, *tcol_ind;
   // double *Pvec, *val;
   // int *nnonzero_row;
+  // char COEFF_PATH[buf_len];
 
-  // if (argc != 5) {
-  //   printf("Usage: ./example.out <index_file> <coeff_file> <alpha>
-  //   <m_max>\n");
-  //   exit(1);
-  // }
+  // printf("index file path: ");
+  // scanf("%s\n", MTX_PATH);
+  // printf("coeff file path: ");
+  // scanf("%s\n", COEFF_PATH);
 
   // // Index file
-  // if ((fpi = fopen(argv[1], "r")) == NULL) {
-  //   printf("Error: Cannot open file: '%s'\n", argv[1]);
+  // if ((fpi = fopen(MTX_PATH, "r")) == NULL) {
+  //   printf("Error: Cannot open file: '%s'\n", MTX_PATH);
   //   exit(1);
   // }
-  // printf("%s\n", argv[1]);
+  // printf("%s\n", MTX_PATH);
 
   // if (fgets(cbuf, sizeof(cbuf), fpi) != NULL) {
   //   n = atoi(&cbuf[0]);
@@ -86,8 +97,8 @@ int main(int argc, char *argv[]) {
   // fclose(fpi);
 
   // // Coeff file
-  // if ((fpv = fopen(argv[2], "r")) == NULL) {
-  //   printf("Error: Cannot open file: '%s'\n", argv[2]);
+  // if ((fpv = fopen(COEFF_PATH, "r")) == NULL) {
+  //   printf("Error: Cannot open file: '%s'\n", COEFF_PATH);
   //   exit(1);
   // }
   // read_lines_double(fpv, nonzeros, &val[0]);
@@ -102,7 +113,8 @@ int main(int argc, char *argv[]) {
   // ad = (double *)malloc(sizeof(double) * n);
 
   // get_jsol_mtx(n, &val[0], &trow_ptr[0], &tcol_ind[0], &row_ptr[0],
-  // &col_ind[0], &A[0], &ad[0]);
+  // &col_ind[0],
+  //              &A[0], &ad[0]);
 
   // free(tcol_ind);
   // free(trow_ptr);
@@ -110,25 +122,16 @@ int main(int argc, char *argv[]) {
   /*--- Read JSOL Matrix ---*/
 
   /*--- Read SuiteSparse Matrix ---*/
-  if (argc != 4) {
-    printf("Usage: ./example.out <mtx_filename> <alpha> <m_max>\n");
-    return 0;
-  }
+  printf("matrix file path: ");
+  scanf("%s", MTX_PATH);
 
-  if ((fp = fopen(argv[1], "r")) == NULL) {
-    printf("Error: Cannot open file: '%s'\n", argv[1]);
+  if ((fp = fopen(MTX_PATH, "r")) == NULL) {
+    printf("Error: Cannot open file: '%s'\n", MTX_PATH);
     exit(1);
   }
-  printf("%s\n", argv[1]);
+  printf("%s\n", MTX_PATH);
 
-  while (fgets(cbuf, sizeof(cbuf), fp) != NULL) {
-    if (cbuf[0] == '%') {
-      continue;  // ignore comment
-    } else {
-      sscanf(cbuf, "%d %d %d", &n, &n, &j);
-      break;
-    }
-  }
+  n = get_suitesparse_n(fp);
 
   row_ptr = (int *)malloc(sizeof(int) * (n + 1));
   // get nonzeros, row_ptr
@@ -139,8 +142,8 @@ int main(int argc, char *argv[]) {
   col_ind = (int *)malloc(sizeof(int) * nonzeros);
   ad = (double *)malloc(sizeof(double) * n);
 
-  if ((fp = fopen(argv[1], "r")) == NULL) {
-    printf("Error: Cannot open file: '%s'\n", argv[1]);
+  if ((fp = fopen(MTX_PATH, "r")) == NULL) {
+    printf("Error: Cannot open file: '%s'\n", MTX_PATH);
     exit(1);
   }
 
@@ -149,6 +152,7 @@ int main(int argc, char *argv[]) {
   fclose(fp);
   /*--- Read SuiteSparse Matrix ---*/
 
+  printf("n:%d, nonzeros:%d\n", n, nonzeros);
   diagonal_scaling(n, row_ptr, col_ind, A, ad);
 
   // SuiteSparse b:right hand vector
@@ -158,17 +162,15 @@ int main(int argc, char *argv[]) {
   }
   srand(1);
 
-  const int nitecg = 30000;
+  const int K_max = 30000;
   const double err = 1.0e-8;
 
-  // const double threshold = -atof(argv[3]);  // JSOL
-  // int m = atoi(argv[4]);                    // JSOL
-  // const double gamma = 1.05;                // JSOL-choke
-  // const double gamma = 1.35;                // JSOL-spiral
+  double threshold = -atof(argv[1]);
+  int m = atoi(argv[2]);
 
-  const double threshold = -atof(argv[2]);  // SuiteSparse
-  int m = atoi(argv[3]);                    // SuiteSparse
-  const double gamma = 1.0;                 // SuiteSparse
+  // const double gamma = 1.05;  // JSOL-choke
+  // const double gamma = 1.35;  // JSOL-spiral
+  const double gamma = 1.0;  // SuiteSparse
 
   int ite, zite;
   double *solx;
@@ -194,8 +196,8 @@ int main(int argc, char *argv[]) {
   z = (double *)malloc(sizeof(double) * n);
 
   double rnorm, bnorm;
-  int h = 1, it, l, lmax;
-  lmax = ceil(log(nitecg) / log(m));
+  int h = 1, lmax;
+  lmax = ceil(log(K_max) / log(m));
   double *E;
   E = (double *)malloc(sizeof(double) * (n * m));
 
@@ -226,15 +228,15 @@ int main(int argc, char *argv[]) {
   unnonzero = (int *)malloc(sizeof(int) * (procs + 1));
 
   char mtxname[buf_len];
-  strcpy(mtxname, argv[1] + 4);
 
   for (zite = 0; zite < 6; zite++) {
     if (zite == 0) t0 = get_time();
     if (zite == 1) {
+      strcpy(mtxname, MTX_PATH + 4);
       sprintf(sfile, "%s.sciccg.zite%d.theta%.1f.thread%d.dat", mtxname, zite,
               -threshold, procs);
       fp = fopen(sfile, "w");
-      fprintf(fp, "#ite residual of %s\n", argv[1]);
+      fprintf(fp, "#ite residual of %s\n", MTX_PATH);
       printf("Threshold: 10^(%.1f) Thread: %d\n", threshold, procs);
     }
 
@@ -354,7 +356,7 @@ int main(int argc, char *argv[]) {
     }  // end parallel region
 
     /*--- ICCG ---*/
-    for (ite = 1; ite <= nitecg; ite++) {
+    for (ite = 1; ite <= K_max; ite++) {
 #pragma omp parallel private(myid, istart, iend, interd, i)
       {
 #pragma omp single
@@ -494,7 +496,7 @@ int main(int argc, char *argv[]) {
         }
         break;
 
-      } else if (sqrt(rnorm / bnorm) > err && ite == nitecg) {
+      } else if (sqrt(rnorm / bnorm) > err && ite == K_max) {
         printf("residual: %.9f\n", sqrt(rnorm / bnorm));
         printf("ICCG did NOT converge.\n");
         exit(1);
@@ -599,7 +601,7 @@ int main(int argc, char *argv[]) {
         printf("info = %d\n", info);  // error check
         exit(1);
       } else {
-        checkEigenPair(m, X, X2, W);
+        // checkEigenPair(m, X, X2, W);
       }
       /*--- end E^T*A*E---*/
       double theta = pow(10, threshold);
@@ -628,6 +630,9 @@ int main(int argc, char *argv[]) {
         free(W);
         free(X2);
       }
+      // constructMappingOperator(n, m, &m_max, theta, A, row_ptr, col_ind, B,
+      // E,
+      //                          solx);
     }  // end if zite==0
   }
 
@@ -646,7 +651,7 @@ int main(int argc, char *argv[]) {
   free(A);
   free(solx);
   free(b);
-  // free(Pvec); // JSOL
+  // free(Pvec);  // JSOL
   free(iuhead);
   free(iucol);
   free(u);
@@ -805,6 +810,22 @@ int bic(int n, double *diag, int *iuhead, int *iucol, double *u, int istart,
   return 1;
 }
 
+int get_suitesparse_n(FILE *fp) {
+  const int buf_len = 512;
+  char cbuf[buf_len];
+  int n;
+
+  while (fgets(cbuf, sizeof(cbuf), fp) != NULL) {
+    if (cbuf[0] == '%') {
+      continue;  // ignore comment
+    } else {
+      sscanf(cbuf, "%d %d %*d", &n, &n);
+      break;
+    }
+  }
+
+  return n;
+}
 int get_suitesparse_mtx_info(FILE *fp, int n, int *nonzeros, int *row_ptr) {
   int i;
   int buf_len = 512;
@@ -1114,4 +1135,138 @@ int checkEigenPair(const int m, const double *X, const double *X2,
   }
   free(Y);
   return 1;
+}
+
+void constructMappingOperator(const int n, const int m, int *m_max,
+                              const double theta, double *A, const int *row_ptr,
+                              const int *col_ind, double *B, double *E,
+                              double *solx) {
+  int i, j, k;
+  double v;
+  int tm_max = *m_max;
+  double *enorm, *er, *eq;
+  enorm = (double *)malloc(sizeof(double) * m);
+  er = (double *)malloc(sizeof(double) * (m * m));
+  eq = (double *)malloc(sizeof(double) * (m * n));
+
+#pragma omp parallel private(i, j)
+  {
+    // e = x - x~
+#pragma omp for private(j)
+    for (i = 0; i < m; i++) {
+      for (j = 0; j < n; j++) {
+        E[(i * n) + j] = solx[j] - E[(i * n) + j];
+      }
+    }
+
+    /*--- Modified Gram-Schmidt orthogonalization ---*/
+    for (i = 0; i < m; i++) {
+      enorm[i] = 0.0;
+    }
+    for (i = 0; i < m; i++) {
+      for (j = 0; j < m; j++) {
+        er[i * m + j] = 0.0;
+      }
+    }
+    for (i = 0; i < m; i++) {
+      v = 0.0;
+#pragma omp for reduction(+ : v)
+      for (j = 0; j < n; j++) {
+        v += E[i * n + j] * E[i * n + j];
+      }
+      enorm[i] = sqrt(v);
+#pragma omp barrier
+    }
+
+    for (i = 0; i < m; i++) {
+      er[i * m + i] = enorm[i];
+#pragma omp for
+      for (j = 0; j < n; j++) {
+        eq[i * n + j] = E[i * n + j] / er[i * m + i];
+      }
+      for (j = i + 1; j < m; j++) {
+#pragma omp for
+        for (k = 0; k < n; k++) {
+          er[i * m + j] += eq[i * n + k] * E[j * n + k];
+        }
+#pragma omp for
+        for (k = 0; k < n; k++) {
+          E[j * n + k] -= eq[i * n + k] * er[i * m + j];
+        }
+      }
+    }
+    /*--- end Modified Gram-Schmidt orthogonalization ---*/
+  }  // end of parallel region
+
+  /*--- E^T*A*E---*/
+  double *ae, *X, *W, *X2;
+  lapack_int info;
+
+  ae = (double *)malloc(sizeof(double) * (n * m));
+  X = (double *)malloc(sizeof(double) * (m * m));
+  W = (double *)malloc(m * sizeof(double));
+  X2 = (double *)malloc(sizeof(double) * (m * m));
+
+#pragma omp parallel private(i)
+  {
+    for (i = 0; i < m; i++) {
+#pragma omp for
+      for (j = 0; j < n; j++) {
+        ae[i * n + j] = 0.0;
+      }
+    }
+
+#pragma omp for private(k, j)
+    for (i = 0; i < m; i++) {
+      for (k = 0; k < n; k++) {
+        for (j = row_ptr[k]; j < row_ptr[k + 1]; j++) {
+          ae[i * n + k] += A[j] * eq[i * n + col_ind[j]];
+        }
+      }
+    }
+  }  // end parallel
+
+  // X = eq^T * ae
+  cblas_dgemm(CblasColMajor, CblasTrans, CblasNoTrans, m, m, n, 1.0, eq, n, ae,
+              n, 0.0, X, m);
+
+  for (i = 0; i < m * m; i++) {
+    X2[i] = X[i];
+  }
+
+  // compute eigenvalues and eigenvectors of X
+  info = LAPACKE_dsyev(LAPACK_COL_MAJOR, 'V', 'U', m, X, m, W);
+  if (info != 0) {
+    printf("info = %d\n", info);  // error check
+    exit(1);
+  } else {
+    // checkEigenPair(m, X, X2, W);
+  }
+  /*--- end E^T*A*E---*/
+
+  if (W[0] > theta) {
+    printf("Error: No error vector sampled. theta is too small.");
+    exit(1);
+  }
+  for (i = 0; i < m; i++) {
+    if (W[i] > theta) {
+      tm_max = i;
+      break;
+    }
+  }
+  printf("m_max = %d\n", tm_max);
+
+  if (tm_max > 0) {
+    cblas_dgemm(CblasColMajor, CblasNoTrans, CblasNoTrans, n, tm_max, m, 1.0,
+                eq, n, X, m, 0.0, B, n);
+    *m_max = tm_max;
+
+    free(enorm);
+    free(er);
+    free(eq);
+    free(ae);
+    free(X);
+    free(W);
+    free(X2);
+  }
 }
