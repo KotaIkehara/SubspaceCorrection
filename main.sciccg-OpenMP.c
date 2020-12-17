@@ -20,8 +20,8 @@ int get_jsol_mtx(const int n, const double *val, const int *trow_ptr,
                  const int *tcol_ind, const int *row_ptr, int *col_ind,
                  double *A, double *ad);
 
-void diagscale(const int n, const int *row_ptr, const int *col_ind, double *A,
-               double *ad);
+void diagonal_scaling(const int n, const int *row_ptr, const int *col_ind,
+                      double *A, double *ad);
 void fbsub(int *iuhead, int *iucol, double *u, int n, double *diag, double *z,
            double *r, int istart, int iend);
 void mkbu(double *ad, double *A, int n, int *col_ind, int *row_ptr,
@@ -29,6 +29,10 @@ void mkbu(double *ad, double *A, int n, int *col_ind, int *row_ptr,
           int iend, int myid, double gamma, int *unnonzero, int procs);
 int bic(int n, double *diag, int *iuhead, int *iucol, double *u, int istart,
         int iend);
+int sampling(const int n, const int m, const int ite, const int lmax,
+             const double *solx, int *h, double *E);
+int checkEigenPair(const int m, const double *X, const double *X2,
+                   const double *W);
 
 int main(int argc, char *argv[]) {
   int i, j, k;
@@ -145,7 +149,7 @@ int main(int argc, char *argv[]) {
   fclose(fp);
   /*--- Read SuiteSparse Matrix ---*/
 
-  diagscale(n, row_ptr, col_ind, A, ad);
+  diagonal_scaling(n, row_ptr, col_ind, A, ad);
 
   // SuiteSparse b:right hand vector
   b = (double *)malloc(sizeof(double) * n);
@@ -485,34 +489,18 @@ int main(int argc, char *argv[]) {
           t1 = get_time();
           printf("\nICCG ite: %d\n", ite);
           printf("ICCG time: %lf\n", t1 - t0);
+        } else {
+          total_ite += ite;
         }
-        if (zite > 0) total_ite = total_ite + ite;
         break;
+
       } else if (sqrt(rnorm / bnorm) > err && ite == nitecg) {
         printf("residual: %.9f\n", sqrt(rnorm / bnorm));
         printf("ICCG did NOT converge.\n");
         exit(1);
       }
       /*--- CG ---*/
-
-      if (zite == 0) {
-        /*--- Selection of Approximate Solution Vectors ---*/
-        if (ite % h == 0) {
-          it = 0;
-          for (l = 0; l < lmax + 1; l++) {
-            it += pow(-1, l) * floor((ite - 1) / pow(m, l));
-          }
-          j = it % m;
-#pragma omp parallel for
-          for (i = 0; i < n; i++) {
-            E[j * n + i] = solx[i];
-          }
-          if (ite == h * m) {
-            h = h * 2;
-          }
-        }
-        /*--- end Selection of Approximate Solution Vectors ---*/
-      }
+      if (zite == 0) sampling(n, m, ite, lmax, solx, &h, E);
     }
     if (zite == 1) fclose(fp);
     /*--- end ICCG ---*/
@@ -522,7 +510,7 @@ int main(int argc, char *argv[]) {
       enorm = (double *)malloc(sizeof(double) * m);
       er = (double *)malloc(sizeof(double) * (m * m));
       eq = (double *)malloc(sizeof(double) * (m * n));
-#pragma omp parallel
+#pragma omp parallel private(i, j)
       {
         // e = x - x~
 #pragma omp for private(j)
@@ -541,39 +529,42 @@ int main(int argc, char *argv[]) {
             er[i * m + j] = 0.0;
           }
         }
-#pragma omp for private(j)
         for (i = 0; i < m; i++) {
+          v = 0.0;
+#pragma omp for reduction(+ : v)
           for (j = 0; j < n; j++) {
-            enorm[i] += E[i * n + j] * E[i * n + j];
+            v += E[i * n + j] * E[i * n + j];
           }
-          enorm[i] = sqrt(enorm[i]);
+          enorm[i] = sqrt(v);
+#pragma omp barrier
         }
 
+        for (i = 0; i < m; i++) {
+          er[i * m + i] = enorm[i];
+#pragma omp for
+          for (j = 0; j < n; j++) {
+            eq[i * n + j] = E[i * n + j] / er[i * m + i];
+          }
+          for (j = i + 1; j < m; j++) {
+#pragma omp for
+            for (k = 0; k < n; k++) {
+              er[i * m + j] += eq[i * n + k] * E[j * n + k];
+            }
+#pragma omp for
+            for (k = 0; k < n; k++) {
+              E[j * n + k] -= eq[i * n + k] * er[i * m + j];
+            }
+          }
+        }
+        /*--- end Modified Gram-Schmidt orthogonalization ---*/
       }  // end of parallel region
 
-      for (i = 0; i < m; i++) {
-        er[i * m + i] = enorm[i];
-        for (j = 0; j < n; j++) {
-          eq[i * n + j] = E[i * n + j] / er[i * m + i];
-        }
-        for (j = i + 1; j < m; j++) {
-          for (k = 0; k < n; k++) {
-            er[i * m + j] += eq[i * n + k] * E[j * n + k];
-          }
-          for (k = 0; k < n; k++) {
-            E[j * n + k] = E[j * n + k] - eq[i * n + k] * er[i * m + j];
-          }
-        }
-      }
-      /*--- end Modified Gram-Schmidt orthogonalization ---*/
-
       /*--- E^T*A*E---*/
-      double *ae, *X, *W, *X2, *Y, temp;
+      double *ae, *X, *W, *X2;
       ae = (double *)malloc(sizeof(double) * (n * m));
       X = (double *)malloc(sizeof(double) * (m * m));
       W = (double *)malloc(m * sizeof(double));
       X2 = (double *)malloc(sizeof(double) * (m * m));
-      Y = (double *)malloc(m * sizeof(double));
 
 #pragma omp parallel private(i)
       {
@@ -606,39 +597,9 @@ int main(int argc, char *argv[]) {
       info = LAPACKE_dsyev(LAPACK_COL_MAJOR, 'V', 'U', m, X, m, W);
       if (info != 0) {
         printf("info = %d\n", info);  // error check
+        exit(1);
       } else {
-        // check the result
-        // printf("-- check the residual of each eigenpair --\n");
-        for (k = 0; k < m; k++) {
-          for (i = 0; i < m; i++) {
-            Y[i] = 0.0;
-            for (j = 0; j < m; j++) {
-              Y[i] += X2[j * m + i] * X[k * m + j];
-            }
-          }
-          temp = 0.0;
-          for (i = 0; i < m; i++) {
-            temp +=
-                (Y[i] - (W[k] * X[k * m + i])) * (Y[i] - (W[k] * X[k * m + i]));
-          }
-          temp = sqrt(temp);
-
-          // printf("[%3d] eigenvalue = %8.3e, || Ax - wx ||_2 =
-          // %8.3e\n", k
-          // + 1, W[k], temp);
-        }
-
-        // printf("-- check the orthogonality of eigenvectors --\n");
-        for (k = 0; k < m; k++) {
-          for (j = k; j < m; j++) {
-            temp = 0.0;
-            for (i = 0; i < m; i++) {
-              temp += X[k * m + i] * X[j * m + i];
-            }
-            // printf("x[%3d]^T x[%3d] = %8.3e\n", k + 1, j + 1,
-            // temp);
-          }
-        }
+        checkEigenPair(m, X, X2, W);
       }
       /*--- end E^T*A*E---*/
       double theta = pow(10, threshold);
@@ -666,7 +627,6 @@ int main(int argc, char *argv[]) {
         free(X);
         free(W);
         free(X2);
-        free(Y);
       }
     }  // end if zite==0
   }
@@ -707,8 +667,8 @@ double get_time(void) {
 }
 
 // ad^(-1) * A * ad(-1)
-void diagscale(const int n, const int *row_ptr, const int *col_ind, double *A,
-               double *ad) {
+void diagonal_scaling(const int n, const int *row_ptr, const int *col_ind,
+                      double *A, double *ad) {
   int i, j, jj;
 
   for (i = 0; i < n; i++) {
@@ -1088,5 +1048,70 @@ int get_jsol_mtx(const int n, const double *val, const int *trow_ptr,
 
   free(fill);
 
+  return 1;
+}
+
+int sampling(const int n, const int m, const int ite, const int lmax,
+             const double *solx, int *h, double *E) {
+  int i, j;
+  int it, l;
+  int hnext;
+
+  hnext = *h;
+  if (ite % hnext == 0) {
+    it = 0;
+    for (l = 0; l < lmax + 1; l++) {
+      it += pow(-1, l) * floor((ite - 1) / pow(m, l));
+    }
+    j = it % m;
+#pragma omp parallel for
+    for (i = 0; i < n; i++) {
+      E[j * n + i] = solx[i];
+    }
+    if (ite == hnext * m) {
+      hnext = hnext * 2;
+    }
+  }
+
+  *h = hnext;
+  return 1;
+}
+
+int checkEigenPair(const int m, const double *X, const double *X2,
+                   const double *W) {
+  int i, j, k;
+  double temp;
+  double *Y;
+  Y = (double *)malloc(m * sizeof(double));
+
+  printf("-- check the residual of each eigenpair --\n");
+  for (k = 0; k < m; k++) {
+    for (i = 0; i < m; i++) {
+      Y[i] = 0.0;
+      for (j = 0; j < m; j++) {
+        Y[i] += X2[j * m + i] * X[k * m + j];
+      }
+    }
+    temp = 0.0;
+    for (i = 0; i < m; i++) {
+      temp += (Y[i] - (W[k] * X[k * m + i])) * (Y[i] - (W[k] * X[k * m + i]));
+    }
+    temp = sqrt(temp);
+
+    printf("[%3d] eigenvalue = %8.3e, || Ax - wx ||_2 =% 8.3e\n ", k + 1, W[k],
+           temp);
+  }
+
+  printf("-- check the orthogonality of eigenvectors --\n");
+  for (k = 0; k < m; k++) {
+    for (j = k; j < m; j++) {
+      temp = 0.0;
+      for (i = 0; i < m; i++) {
+        temp += X[k * m + i] * X[j * m + i];
+      }
+      printf("x[%3d]^T x[%3d] = %8.3e\n", k + 1, j + 1, temp);
+    }
+  }
+  free(Y);
   return 1;
 }
