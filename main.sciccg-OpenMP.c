@@ -113,8 +113,7 @@ int main(int argc, char *argv[]) {
   // ad = (double *)malloc(sizeof(double) * n);
 
   // get_jsol_mtx(n, &val[0], &trow_ptr[0], &tcol_ind[0], &row_ptr[0],
-  // &col_ind[0],
-  //              &A[0], &ad[0]);
+  // &col_ind[0], &A[0], &ad[0]);
 
   // free(tcol_ind);
   // free(trow_ptr);
@@ -540,26 +539,23 @@ int main(int argc, char *argv[]) {
           enorm[i] = sqrt(v);
 #pragma omp barrier
         }
+      }  // end of parallel region
 
-        for (i = 0; i < m; i++) {
-          er[i * m + i] = enorm[i];
-#pragma omp for
-          for (j = 0; j < n; j++) {
-            eq[i * n + j] = E[i * n + j] / er[i * m + i];
+      for (i = 0; i < m; i++) {
+        er[i * m + i] = enorm[i];
+        for (j = 0; j < n; j++) {
+          eq[i * n + j] = E[i * n + j] / er[i * m + i];
+        }
+        for (j = i + 1; j < m; j++) {
+          for (k = 0; k < n; k++) {
+            er[i * m + j] += eq[i * n + k] * E[j * n + k];
           }
-          for (j = i + 1; j < m; j++) {
-#pragma omp for
-            for (k = 0; k < n; k++) {
-              er[i * m + j] += eq[i * n + k] * E[j * n + k];
-            }
-#pragma omp for
-            for (k = 0; k < n; k++) {
-              E[j * n + k] -= eq[i * n + k] * er[i * m + j];
-            }
+          for (k = 0; k < n; k++) {
+            E[j * n + k] = E[j * n + k] - eq[i * n + k] * er[i * m + j];
           }
         }
-        /*--- end Modified Gram-Schmidt orthogonalization ---*/
-      }  // end of parallel region
+      }
+      /*--- end Modified Gram-Schmidt orthogonalization ---*/
 
       /*--- E^T*A*E---*/
       double *ae, *X, *W, *X2;
@@ -630,9 +626,6 @@ int main(int argc, char *argv[]) {
         free(W);
         free(X2);
       }
-      // constructMappingOperator(n, m, &m_max, theta, A, row_ptr, col_ind, B,
-      // E,
-      //                          solx);
     }  // end if zite==0
   }
 
@@ -1177,27 +1170,23 @@ void constructMappingOperator(const int n, const int m, int *m_max,
       enorm[i] = sqrt(v);
 #pragma omp barrier
     }
-
-    for (i = 0; i < m; i++) {
-      er[i * m + i] = enorm[i];
-#pragma omp for
-      for (j = 0; j < n; j++) {
-        eq[i * n + j] = E[i * n + j] / er[i * m + i];
-      }
-      for (j = i + 1; j < m; j++) {
-#pragma omp for
-        for (k = 0; k < n; k++) {
-          er[i * m + j] += eq[i * n + k] * E[j * n + k];
-        }
-#pragma omp for
-        for (k = 0; k < n; k++) {
-          E[j * n + k] -= eq[i * n + k] * er[i * m + j];
-        }
-      }
-    }
-    /*--- end Modified Gram-Schmidt orthogonalization ---*/
   }  // end of parallel region
 
+  for (i = 0; i < m; i++) {
+    er[i * m + i] = enorm[i];
+    for (j = 0; j < n; j++) {
+      eq[i * n + j] = E[i * n + j] / er[i * m + i];
+    }
+    for (j = i + 1; j < m; j++) {
+      for (k = 0; k < n; k++) {
+        er[i * m + j] += eq[i * n + k] * E[j * n + k];
+      }
+      for (k = 0; k < n; k++) {
+        E[j * n + k] = E[j * n + k] - eq[i * n + k] * er[i * m + j];
+      }
+    }
+  }
+  /*--- end Modified Gram-Schmidt orthogonalization ---*/
   /*--- E^T*A*E---*/
   double *ae, *X, *W, *X2;
   lapack_int info;
