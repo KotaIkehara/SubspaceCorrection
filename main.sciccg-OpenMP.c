@@ -113,7 +113,8 @@ int main(int argc, char *argv[]) {
   // ad = (double *)malloc(sizeof(double) * n);
 
   // get_jsol_mtx(n, &val[0], &trow_ptr[0], &tcol_ind[0], &row_ptr[0],
-  // &col_ind[0], &A[0], &ad[0]);
+  // &col_ind[0],
+  //              &A[0], &ad[0]);
 
   // free(tcol_ind);
   // free(trow_ptr);
@@ -151,14 +152,10 @@ int main(int argc, char *argv[]) {
   fclose(fp);
   /*--- Read SuiteSparse Matrix ---*/
 
-  printf("n:%d, nonzeros:%d\n", n, nonzeros);
   diagonal_scaling(n, row_ptr, col_ind, A, ad);
 
-  // SuiteSparse b:right hand vector
+  // b:right hand vector
   b = (double *)malloc(sizeof(double) * n);
-  for (i = 0; i < n; i++) {
-    b[i] = 1.0;
-  }
   srand(1);
 
   const int K_max = 30000;
@@ -166,6 +163,7 @@ int main(int argc, char *argv[]) {
 
   double threshold = -atof(argv[1]);
   int m = atoi(argv[2]);
+  int m_max = m;
 
   // const double gamma = 1.05;  // JSOL-choke
   // const double gamma = 1.35;  // JSOL-spiral
@@ -202,9 +200,8 @@ int main(int argc, char *argv[]) {
 
   double *Bu;
   Bu = (double *)malloc(sizeof(double) * n);
-  lapack_int info;
+  lapack_int info, *pivot;
   char sfile[buf_len];
-  int m_max = m;
 
   double *B;
   B = (double *)malloc(sizeof(double) * (n * m));
@@ -213,16 +210,16 @@ int main(int argc, char *argv[]) {
   ab = (double *)malloc(sizeof(double) * n * m_max);
   bab = (double *)malloc(sizeof(double) * m_max * m_max);
 
+  // Parallel region
   int interd, istart, iend;
   int numprocs, myid;
-
-  lapack_int *pivot;
-
-  double t0, t1, ts, te;
+  const int procs = omp_get_max_threads();
   double v;
+
+  // Evaluation
+  double t0, t1, ts, te;
   int total_ite = 0;
 
-  const int procs = omp_get_max_threads();
   int *unnonzero;
   unnonzero = (int *)malloc(sizeof(int) * (procs + 1));
 
@@ -290,6 +287,7 @@ int main(int argc, char *argv[]) {
       {
         bnorm = 0.0;
         for (i = 0; i < n; i++) {
+          b[i] = 1.0;
           // b[i] = rand() / (double)RAND_MAX;
           // bnorm += fabs(Pvec[i]) * fabs(Pvec[i]);  // JSOL
           bnorm += fabs(b[i]) * fabs(b[i]);  // SuiteSparse
@@ -507,125 +505,9 @@ int main(int argc, char *argv[]) {
     /*--- end ICCG ---*/
 
     if (zite == 0) {
-      double *enorm, *er, *eq;
-      enorm = (double *)malloc(sizeof(double) * m);
-      er = (double *)malloc(sizeof(double) * (m * m));
-      eq = (double *)malloc(sizeof(double) * (m * n));
-#pragma omp parallel private(i, j)
-      {
-        // e = x - x~
-#pragma omp for private(j)
-        for (i = 0; i < m; i++) {
-          for (j = 0; j < n; j++) {
-            E[(i * n) + j] = solx[j] - E[(i * n) + j];
-          }
-        }
-
-        /*--- Modified Gram-Schmidt orthogonalization ---*/
-        for (i = 0; i < m; i++) {
-          enorm[i] = 0.0;
-        }
-        for (i = 0; i < m; i++) {
-          for (j = 0; j < m; j++) {
-            er[i * m + j] = 0.0;
-          }
-        }
-        for (i = 0; i < m; i++) {
-          v = 0.0;
-#pragma omp for reduction(+ : v)
-          for (j = 0; j < n; j++) {
-            v += E[i * n + j] * E[i * n + j];
-          }
-          enorm[i] = sqrt(v);
-#pragma omp barrier
-        }
-      }  // end of parallel region
-
-      for (i = 0; i < m; i++) {
-        er[i * m + i] = enorm[i];
-        for (j = 0; j < n; j++) {
-          eq[i * n + j] = E[i * n + j] / er[i * m + i];
-        }
-        for (j = i + 1; j < m; j++) {
-          for (k = 0; k < n; k++) {
-            er[i * m + j] += eq[i * n + k] * E[j * n + k];
-          }
-          for (k = 0; k < n; k++) {
-            E[j * n + k] = E[j * n + k] - eq[i * n + k] * er[i * m + j];
-          }
-        }
-      }
-      /*--- end Modified Gram-Schmidt orthogonalization ---*/
-
-      /*--- E^T*A*E---*/
-      double *ae, *X, *W, *X2;
-      ae = (double *)malloc(sizeof(double) * (n * m));
-      X = (double *)malloc(sizeof(double) * (m * m));
-      W = (double *)malloc(m * sizeof(double));
-      X2 = (double *)malloc(sizeof(double) * (m * m));
-
-#pragma omp parallel private(i)
-      {
-        for (i = 0; i < m; i++) {
-#pragma omp for
-          for (j = 0; j < n; j++) {
-            ae[i * n + j] = 0.0;
-          }
-        }
-
-#pragma omp for private(k, j)
-        for (i = 0; i < m; i++) {
-          for (k = 0; k < n; k++) {
-            for (j = row_ptr[k]; j < row_ptr[k + 1]; j++) {
-              ae[i * n + k] += A[j] * eq[i * n + col_ind[j]];
-            }
-          }
-        }
-      }  // end parallel
-
-      // X = eq^T * ae
-      cblas_dgemm(CblasColMajor, CblasTrans, CblasNoTrans, m, m, n, 1.0, eq, n,
-                  ae, n, 0.0, X, m);
-
-      for (i = 0; i < m * m; i++) {
-        X2[i] = X[i];
-      }
-
-      // compute eigenvalues and eigenvectors of X
-      info = LAPACKE_dsyev(LAPACK_COL_MAJOR, 'V', 'U', m, X, m, W);
-      if (info != 0) {
-        printf("info = %d\n", info);  // error check
-        exit(1);
-      } else {
-        // checkEigenPair(m, X, X2, W);
-      }
-      /*--- end E^T*A*E---*/
       double theta = pow(10, threshold);
-
-      if (W[0] > theta) {
-        printf("Error: No error vector sampled. Threshold is too small.");
-        exit(1);
-      }
-      for (i = 0; i < m; i++) {
-        if (W[i] > theta) {
-          m_max = i;
-          break;
-        }
-      }
-      printf("m_max = %d\n", m_max);
-
-      if (m_max > 0) {
-        cblas_dgemm(CblasColMajor, CblasNoTrans, CblasNoTrans, n, m_max, m, 1.0,
-                    eq, n, X, m, 0.0, B, n);
-
-        free(enorm);
-        free(er);
-        free(eq);
-        free(ae);
-        free(X);
-        free(W);
-        free(X2);
-      }
+      constructMappingOperator(n, m, &m_max, theta, A, row_ptr, col_ind, B, E,
+                               solx);
     }  // end if zite==0
   }
 
