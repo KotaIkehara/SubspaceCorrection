@@ -36,9 +36,9 @@ int sampling(const int n, const int m, const int ite, const int lmax,
 int checkEigenPair(const int m, const double *X, const double *X2,
                    const double *W);
 void constructMappingOperator(const int n, const int m, int *m_max,
-                              const double theta, double *A, const int *row_ptr,
-                              const int *col_ind, double *B, double *E,
-                              double *solx);
+                              const double threshold, double *A,
+                              const int *row_ptr, const int *col_ind, double *B,
+                              double *E, double *solx);
 
 int main(int argc, char *argv[]) {
   int i, j, k;
@@ -48,7 +48,7 @@ int main(int argc, char *argv[]) {
   double *A, *ad;
   double *b;
 
-  FILE *fp;
+  FILE *fp, *convergenceFile;
   const int buf_len = 512;
   char cbuf[buf_len], MTX_PATH[buf_len];
 
@@ -58,107 +58,106 @@ int main(int argc, char *argv[]) {
   }
 
   /*--- Read JSOL Matrix ---*/
-  // FILE *fpi, *fpv;
-  // int *trow_ptr, *tcol_ind;
-  // double *Pvec, *val;
-  // int *nnonzero_row;
-  // char COEFF_PATH[buf_len];
+  FILE *fpi, *fpv;
+  int *trow_ptr, *tcol_ind;
+  double *Pvec, *val;
+  int *nnonzero_row;
+  char COEFF_PATH[buf_len];
 
-  // printf("index file path: ");
-  // scanf("%s\n", MTX_PATH);
-  // printf("coeff file path: ");
-  // scanf("%s\n", COEFF_PATH);
+  printf("index file path: ");
+  scanf("%s\n", MTX_PATH);
+  printf("coeff file path: ");
+  scanf("%s\n", COEFF_PATH);
 
-  // // Index file
-  // if ((fpi = fopen(MTX_PATH, "r")) == NULL) {
-  //   printf("Error: Cannot open file: '%s'\n", MTX_PATH);
-  //   exit(1);
-  // }
-  // printf("%s\n", MTX_PATH);
-
-  // if (fgets(cbuf, sizeof(cbuf), fpi) != NULL) {
-  //   n = atoi(&cbuf[0]);
-  //   nonzeros = atoi(&cbuf[16]);
-  // }
-
-  // tcol_ind = (int *)malloc(sizeof(int) * nonzeros);
-  // trow_ptr = (int *)malloc(sizeof(int) * (n + 1));
-
-  // row_ptr = (int *)malloc(sizeof(int) * (n + 1));
-  // nnonzero_row = (int *)malloc(sizeof(int) * n);
-  // val = (double *)malloc(sizeof(double) * nonzeros);
-  // b = (double *)malloc(sizeof(double) * n);
-  // Pvec = (double *)malloc(sizeof(double) * n);
-
-  // read_lines_integer(fpi, nonzeros, &tcol_ind[0]);
-  // read_lines_integer(fpi, n, &nnonzero_row[0]);
-  // read_lines_integer(fpi, n, &trow_ptr[0]);
-  // trow_ptr[n] = trow_ptr[n - 1] + nnonzero_row[n - 1];
-  // fclose(fpi);
-
-  // // Coeff file
-  // if ((fpv = fopen(COEFF_PATH, "r")) == NULL) {
-  //   printf("Error: Cannot open file: '%s'\n", COEFF_PATH);
-  //   exit(1);
-  // }
-  // read_lines_double(fpv, nonzeros, &val[0]);
-  // read_lines_double(fpv, n, &b[0]);
-  // read_lines_double(fpv, n, &Pvec[0]);
-  // fclose(fpv);
-
-  // get_jsol_mtx_info(n, &trow_ptr[0], &tcol_ind[0], &nonzeros, &row_ptr[0]);
-
-  // col_ind = (int *)malloc(sizeof(int) * nonzeros);
-  // A = (double *)malloc(sizeof(double) * nonzeros);
-  // ad = (double *)malloc(sizeof(double) * n);
-
-  // get_jsol_mtx(n, &val[0], &trow_ptr[0], &tcol_ind[0], &row_ptr[0],
-  // &col_ind[0],
-  //              &A[0], &ad[0]);
-
-  // free(tcol_ind);
-  // free(trow_ptr);
-  // free(val);
-  /*--- Read JSOL Matrix ---*/
-
-  /*--- Read SuiteSparse Matrix ---*/
-  printf("matrix file path: ");
-  scanf("%s", MTX_PATH);
-
-  if ((fp = fopen(MTX_PATH, "r")) == NULL) {
+  // Index file
+  if ((fpi = fopen(MTX_PATH, "r")) == NULL) {
     printf("Error: Cannot open file: '%s'\n", MTX_PATH);
     exit(1);
   }
   printf("%s\n", MTX_PATH);
 
-  n = get_suitesparse_n(fp);
-
-  row_ptr = (int *)malloc(sizeof(int) * (n + 1));
-  // get nonzeros, row_ptr
-  get_suitesparse_mtx_info(fp, n, &nonzeros, &row_ptr[0]);
-  fclose(fp);
-
-  A = (double *)malloc(sizeof(double) * nonzeros);
-  col_ind = (int *)malloc(sizeof(int) * nonzeros);
-  ad = (double *)malloc(sizeof(double) * n);
-
-  if ((fp = fopen(MTX_PATH, "r")) == NULL) {
-    printf("Error: Cannot open file: '%s'\n", MTX_PATH);
-    exit(1);
+  if (fgets(cbuf, sizeof(cbuf), fpi) != NULL) {
+    n = atoi(&cbuf[0]);
+    nonzeros = atoi(&cbuf[16]);
   }
 
-  // get col_ind, A, ad
-  get_suitesparse_mtx(fp, n, row_ptr, &col_ind[0], &A[0], &ad[0]);
-  fclose(fp);
+  tcol_ind = (int *)malloc(sizeof(int) * nonzeros);
+  trow_ptr = (int *)malloc(sizeof(int) * (n + 1));
+
+  row_ptr = (int *)malloc(sizeof(int) * (n + 1));
+  nnonzero_row = (int *)malloc(sizeof(int) * n);
+  val = (double *)malloc(sizeof(double) * nonzeros);
+  b = (double *)malloc(sizeof(double) * n);
+  Pvec = (double *)malloc(sizeof(double) * n);
+
+  read_lines_integer(fpi, nonzeros, &tcol_ind[0]);
+  read_lines_integer(fpi, n, &nnonzero_row[0]);
+  read_lines_integer(fpi, n, &trow_ptr[0]);
+  trow_ptr[n] = trow_ptr[n - 1] + nnonzero_row[n - 1];
+  fclose(fpi);
+
+  // Coeff file
+  if ((fpv = fopen(COEFF_PATH, "r")) == NULL) {
+    printf("Error: Cannot open file: '%s'\n", COEFF_PATH);
+    exit(1);
+  }
+  read_lines_double(fpv, nonzeros, &val[0]);
+  read_lines_double(fpv, n, &b[0]);
+  read_lines_double(fpv, n, &Pvec[0]);
+  fclose(fpv);
+
+  get_jsol_mtx_info(n, &trow_ptr[0], &tcol_ind[0], &nonzeros, &row_ptr[0]);
+
+  col_ind = (int *)malloc(sizeof(int) * nonzeros);
+  A = (double *)malloc(sizeof(double) * nonzeros);
+  ad = (double *)malloc(sizeof(double) * n);
+
+  get_jsol_mtx(n, &val[0], &trow_ptr[0], &tcol_ind[0], &row_ptr[0], &col_ind[0],
+               &A[0], &ad[0]);
+
+  free(tcol_ind);
+  // free(trow_ptr);
+  free(val);
+  /*--- Read JSOL Matrix ---*/
+
+  /*--- Read SuiteSparse Matrix ---*/
+  // printf("matrix file path: ");
+  // scanf("%s", MTX_PATH);
+
+  // if ((fp = fopen(MTX_PATH, "r")) == NULL) {
+  //   printf("Error: Cannot open file: '%s'\n", MTX_PATH);
+  //   exit(1);
+  // }
+  // printf("Reading %s...\n", MTX_PATH);
+
+  // n = get_suitesparse_n(fp);
+
+  // row_ptr = (int *)malloc(sizeof(int) * (n + 1));
+  // // get nonzeros, row_ptr
+  // get_suitesparse_mtx_info(fp, n, &nonzeros, &row_ptr[0]);
+  // fclose(fp);
+
+  // A = (double *)malloc(sizeof(double) * nonzeros);
+  // col_ind = (int *)malloc(sizeof(int) * nonzeros);
+  // ad = (double *)malloc(sizeof(double) * n);
+
+  // if ((fp = fopen(MTX_PATH, "r")) == NULL) {
+  //   printf("Error: Cannot open file: '%s'\n", MTX_PATH);
+  //   exit(1);
+  // }
+
+  // // get col_ind, A, ad
+  // get_suitesparse_mtx(fp, n, &row_ptr[0], &col_ind[0], &A[0], &ad[0]);
+  // fclose(fp);
   /*--- Read SuiteSparse Matrix ---*/
 
   diagonal_scaling(n, row_ptr, col_ind, A, ad);
 
-  // b:right hand vector
-  b = (double *)malloc(sizeof(double) * n);
-  srand(1);
+  // SuiteSparse b:right hand vector
+  // b = (double *)malloc(sizeof(double) * n);
+  // srand(1);
 
-  const int K_max = 30000;
+  const int K_max = 40000;
   const double err = 1.0e-8;
 
   double threshold = -atof(argv[1]);
@@ -166,8 +165,8 @@ int main(int argc, char *argv[]) {
   int m_max = m;
 
   // const double gamma = 1.05;  // JSOL-choke
-  // const double gamma = 1.35;  // JSOL-spiral
-  const double gamma = 1.0;  // SuiteSparse
+  const double gamma = 1.35;  // JSOL-spiral
+  // const double gamma = 1.0;  // SuiteSparse
 
   int ite, zite;
   double *solx;
@@ -219,21 +218,106 @@ int main(int argc, char *argv[]) {
   // Evaluation
   double t0, t1, ts, te;
   int total_ite = 0;
+  double total_time = 0;
 
   int *unnonzero;
   unnonzero = (int *)malloc(sizeof(int) * (procs + 1));
 
   char mtxname[buf_len];
 
-  for (zite = 0; zite < 6; zite++) {
-    if (zite == 0) t0 = get_time();
-    if (zite == 1) {
-      strcpy(mtxname, MTX_PATH + 4);
-      sprintf(sfile, "%s.sciccg.zite%d.theta%.1f.thread%d.dat", mtxname, zite,
-              -threshold, procs);
-      fp = fopen(sfile, "w");
-      fprintf(fp, "#ite residual of %s\n", MTX_PATH);
-      printf("Threshold: 10^(%.1f) Thread: %d\n", threshold, procs);
+  for (zite = 0; zite < 2; zite++) {
+    if (zite == 0) {
+      t0 = get_time();
+    }
+
+    if (zite > 0) {
+      /*--- Read SuiteSparse Matrix ---*/
+      // printf("matrix file path: ");
+      // scanf("%s", MTX_PATH);
+
+      // if ((fp = fopen(MTX_PATH, "r")) == NULL) {
+      //   printf("Error: Cannot open file: '%s'\n", MTX_PATH);
+      //   exit(1);
+      // }
+      // printf("%s\n", MTX_PATH);
+
+      // n = get_suitesparse_n(fp);
+
+      // // get nonzeros, row_ptr
+      // get_suitesparse_mtx_info(fp, n, &nonzeros, &row_ptr[0]);
+      // fclose(fp);
+      // A = (double *)malloc(sizeof(double) * nonzeros);
+      // col_ind = (int *)malloc(sizeof(int) * nonzeros);
+
+      // if ((fp = fopen(MTX_PATH, "r")) == NULL) {
+      //   printf("Error: Cannot open file: '%s'\n", MTX_PATH);
+      //   exit(1);
+      // }
+      // // get col_ind, A, ad
+      // get_suitesparse_mtx(fp, n, row_ptr, &col_ind[0], &A[0], &ad[0]);
+      // fclose(fp);
+      /*--- Read SuiteSparse Matrix ---*/
+
+      /*--- READ JSOL MATRIX ---*/
+      printf("index file path: ");
+      scanf("%s\n", MTX_PATH);
+      printf("coeff file path: ");
+      scanf("%s\n", COEFF_PATH);
+
+      // Index file
+      if ((fpi = fopen(MTX_PATH, "r")) == NULL) {
+        printf("Error: Cannot open file: '%s'\n", MTX_PATH);
+        exit(1);
+      }
+      printf("%s\n", MTX_PATH);
+
+      if (fgets(cbuf, sizeof(cbuf), fpi) != NULL) {
+        n = atoi(&cbuf[0]);
+        nonzeros = atoi(&cbuf[16]);
+      }
+
+      tcol_ind = (int *)malloc(sizeof(int) * nonzeros);
+
+      val = (double *)malloc(sizeof(double) * nonzeros);
+
+      read_lines_integer(fpi, nonzeros, &tcol_ind[0]);
+      read_lines_integer(fpi, n, &nnonzero_row[0]);
+      read_lines_integer(fpi, n, &trow_ptr[0]);
+      trow_ptr[n] = trow_ptr[n - 1] + nnonzero_row[n - 1];
+      fclose(fpi);
+
+      // Coeff file
+      if ((fpv = fopen(COEFF_PATH, "r")) == NULL) {
+        printf("Error: Cannot open file: '%s'\n", COEFF_PATH);
+        exit(1);
+      }
+      read_lines_double(fpv, nonzeros, &val[0]);
+      read_lines_double(fpv, n, &b[0]);
+      read_lines_double(fpv, n, &Pvec[0]);
+      fclose(fpv);
+
+      get_jsol_mtx_info(n, &trow_ptr[0], &tcol_ind[0], &nonzeros, &row_ptr[0]);
+
+      col_ind = (int *)malloc(sizeof(int) * nonzeros);
+      A = (double *)malloc(sizeof(double) * nonzeros);
+
+      get_jsol_mtx(n, &val[0], &trow_ptr[0], &tcol_ind[0], &row_ptr[0],
+                   &col_ind[0], &A[0], &ad[0]);
+
+      free(tcol_ind);
+      free(trow_ptr);
+      free(val);
+      /*--- READ JSOL MATRIX ---*/
+
+      diagonal_scaling(n, row_ptr, col_ind, A, ad);
+      if (zite == 1) {
+        strcpy(mtxname, MTX_PATH + 4);
+        sprintf(sfile, "%s.sciccg.zite%d.theta%.1f.thread%d.dat", mtxname, zite,
+                -threshold, procs);
+        convergenceFile = fopen(sfile, "w");
+        fprintf(convergenceFile, "#ite residual of %s\n", MTX_PATH);
+        printf("Threshold: 10^(%.1f) Thread: %d\n", threshold, procs);
+      }
     }
 
 #pragma omp parallel private(myid, istart, iend, interd)
@@ -275,6 +359,9 @@ int main(int argc, char *argv[]) {
              myid, gamma, unnonzero, procs);
         bic(n, diag, iuhead, iucol, u, istart, iend);
 
+#pragma omp single
+        { free(unnonzero); }
+
 #pragma omp for
         for (i = 0; i < n; i++) {
           diag[i] = 1.0 / diag[i];
@@ -287,13 +374,14 @@ int main(int argc, char *argv[]) {
       {
         bnorm = 0.0;
         for (i = 0; i < n; i++) {
-          b[i] = 1.0;
-          // b[i] = rand() / (double)RAND_MAX;
-          // bnorm += fabs(Pvec[i]) * fabs(Pvec[i]);  // JSOL
-          bnorm += fabs(b[i]) * fabs(b[i]);  // SuiteSparse
+          // b[i] = 1.0;  // SuiteSparse
+          // b[i] = rand() / (double)RAND_MAX; // SuiteSparse
+          // bnorm += fabs(b[i]) * fabs(b[i]);  // SuiteSparse
+          bnorm += fabs(Pvec[i]) * fabs(Pvec[i]);  // JSOL
         }
       }
 
+// TODO: set previous solution?
 #pragma omp for
       for (i = 0; i < n; i++) {
         solx[i] = 0.0;
@@ -318,13 +406,13 @@ int main(int argc, char *argv[]) {
       }
 
       if (zite == 1) {
+        // compute B^TAB
 #pragma omp for private(j)
         for (i = 0; i < m_max; i++) {
           for (j = 0; j < n; j++) {
             ab[i * n + j] = 0.0;
           }
         }
-
 #pragma omp for private(j, k)
         for (i = 0; i < m_max; i++) {
           for (j = 0; j < n; j++) {
@@ -333,14 +421,12 @@ int main(int argc, char *argv[]) {
             }
           }
         }
-
 #pragma omp for private(j)
         for (i = 0; i < m_max; i++) {
           for (j = 0; j < m_max; j++) {
             bab[i * m_max + j] = 0.0;
           }
         }
-
 #pragma omp single
         {
           cblas_dgemm(CblasColMajor, CblasTrans, CblasNoTrans, m_max, m_max, n,
@@ -481,7 +567,7 @@ int main(int argc, char *argv[]) {
       }  // end parallel
 
       if (zite == 1) {
-        fprintf(fp, "%d %.9f\n", ite, sqrt(rnorm / bnorm));
+        fprintf(convergenceFile, "%d %.9f\n", ite, sqrt(rnorm / bnorm));
       }
       if (sqrt(rnorm / bnorm) < err) {
         if (zite == 0) {
@@ -489,31 +575,32 @@ int main(int argc, char *argv[]) {
           printf("\nICCG ite: %d\n", ite);
           printf("ICCG time: %lf\n", t1 - t0);
         } else {
+          te = get_time();
           total_ite += ite;
+          total_time += te - ts;
         }
         break;
-
       } else if (sqrt(rnorm / bnorm) > err && ite == K_max) {
         printf("residual: %.9f\n", sqrt(rnorm / bnorm));
         printf("ICCG did NOT converge.\n");
         exit(1);
       }
-      /*--- CG ---*/
+      /*--- end CG ---*/
       if (zite == 0) sampling(n, m, ite, lmax, solx, &h, E);
     }
-    if (zite == 1) fclose(fp);
+    if (zite == 1) fclose(convergenceFile);
     /*--- end ICCG ---*/
 
     if (zite == 0) {
-      double theta = pow(10, threshold);
-      constructMappingOperator(n, m, &m_max, theta, A, row_ptr, col_ind, B, E,
-                               solx);
+      constructMappingOperator(n, m, &m_max, threshold, A, row_ptr, col_ind, B,
+                               E, solx);
     }  // end if zite==0
+    free(A);
+    free(col_ind);
   }
 
-  te = get_time();
-  printf("SC-ICCG ite: %lf\n", total_ite / 5.0);
-  printf("SC-ICCG time: %lf\n\n", (te - ts) / 5.0);
+  printf("SC-ICCG ite: %lf\n", total_ite / 1.0);
+  printf("SC-ICCG time: %lf\n\n", total_time / 1.0);
 
   free(B);
   free(f);
@@ -522,14 +609,13 @@ int main(int argc, char *argv[]) {
   free(ad);
 
   free(row_ptr);
-  free(col_ind);
-  free(A);
-  free(solx);
-  free(b);
-  // free(Pvec);  // JSOL
-  free(iuhead);
   free(iucol);
   free(u);
+  free(solx);
+  free(b);
+  free(Pvec);          // JSOL
+  free(nnonzero_row);  // JSOL
+  free(iuhead);
   free(p);
   free(q);
   free(pn);
@@ -602,8 +688,14 @@ void fbsub(int *iuhead, int *iucol, double *u, int n, double *diag, double *z,
 }
 
 void mkbu(double *ad, double *A, int n, int *col_ind, int *row_ptr,
-          double *diag, double *u, int *iuhead, int *iucol, int istart,
-          int iend, int myid, double gamma, int *unnonzero, int procs) {
+          // OUT
+          double *diag, double *u, int *iuhead, int *iucol,
+          // IN
+          int istart, int iend, int myid, double gamma,
+          // OUT
+          int *unnonzero,
+          // IN
+          int procs) {
   int kk, i, j, jj, jstart;
 
 #pragma omp for
@@ -645,14 +737,18 @@ void mkbu(double *ad, double *A, int n, int *col_ind, int *row_ptr,
 
 #pragma omp barrier
 
-#pragma omp single
-  { free(unnonzero); }
-
   return;
 }
 
-int bic(int n, double *diag, int *iuhead, int *iucol, double *u, int istart,
-        int iend) {
+int bic(int n,
+        // OUT
+        double *diag,
+        // IN
+        int *iuhead, int *iucol,
+        // OUT
+        double *u,
+        // IN
+        int istart, int iend) {
   int i, j, jj, jp, ji, jjp;
 
   for (i = istart; i < iend; i++) {
@@ -736,6 +832,8 @@ int get_suitesparse_mtx_info(FILE *fp, int n, int *nonzeros, int *row_ptr) {
   // set nonzeros
   *nonzeros = count;
 
+  free(nnonzero_row);
+
   return 1;
 }
 
@@ -747,7 +845,6 @@ int get_suitesparse_mtx(FILE *fp, const int n, int *row_ptr, int *col_ind,
   int row, col;
   double val;
   int *fill;
-
   fill = (int *)malloc(sizeof(int) * (n + 1));
   for (i = 0; i < n + 1; i++) {
     fill[i] = 0;
@@ -1013,9 +1110,9 @@ int checkEigenPair(const int m, const double *X, const double *X2,
 }
 
 void constructMappingOperator(const int n, const int m, int *m_max,
-                              const double theta, double *A, const int *row_ptr,
-                              const int *col_ind, double *B, double *E,
-                              double *solx) {
+                              const double threshold, double *A,
+                              const int *row_ptr, const int *col_ind, double *B,
+                              double *E, double *solx) {
   int i, j, k;
   double v;
   int tm_max = *m_max;
@@ -1023,7 +1120,7 @@ void constructMappingOperator(const int n, const int m, int *m_max,
   enorm = (double *)malloc(sizeof(double) * m);
   er = (double *)malloc(sizeof(double) * (m * m));
   eq = (double *)malloc(sizeof(double) * (m * n));
-
+  double theta = pow(10, threshold);
 #pragma omp parallel private(i, j)
   {
     // e = x - x~
@@ -1141,3 +1238,141 @@ void constructMappingOperator(const int n, const int m, int *m_max,
     free(X2);
   }
 }
+
+// void biccg(int n, int nonzeros, int m_max, double *A, double *B, int
+// *col_ind,
+//            int *row_ptr, int gamma, double *ad, int zite, double *diag,
+//            int *iuhead, int *iucol, double *u, double *solx, double *bab) {
+//   int i, j, k;
+
+//   // Parallel region
+//   int interd, istart, iend;
+//   int numprocs, myid;
+//   double cgrop;
+//   const int procs = omp_get_max_threads();
+//   double v;
+//   double bnorm, ar0, *ab;
+//   int *unnonzero;
+//   ab = (double *)malloc(sizeof(double) * n * m_max);
+//   unnonzero = (int *)malloc(sizeof(int) * (procs + 1));
+
+//   lapack_int *pivot;
+
+// #pragma omp parallel private(myid, istart, iend, interd)
+//   {
+// #pragma omp single
+//     { numprocs = omp_get_num_threads(); }
+//     myid = omp_get_thread_num();
+// #pragma omp barrier
+
+//     interd = n / numprocs;
+//     istart = interd * myid;
+//     iend = interd * (myid + 1);
+//     if (myid == numprocs - 1) {
+//       iend = n;
+//     }
+
+//     if (zite == 0) {
+// #pragma omp for
+//       for (i = 0; i < n; i++) {
+//         diag[i] = 0.0;
+//       }
+// #pragma omp for
+//       for (i = 0; i < n + 1; i++) {
+//         iuhead[i] = 0;
+//       }
+// #pragma omp for
+//       for (i = 0; i < nonzeros; i++) {
+//         iucol[i] = 0;
+//         u[i] = 0.0;
+//       }
+// #pragma omp single
+//       {
+//         for (i = 0; i < procs + 1; i++) {
+//           unnonzero[i] = 0;
+//         }
+//       }
+
+//       mkbu(ad, A, n, col_ind, row_ptr, diag, u, iuhead, iucol, istart, iend,
+//            myid, gamma, unnonzero, procs);
+//       bic(n, diag, iuhead, iucol, u, istart, iend);
+
+// #pragma omp single
+//       { free(unnonzero); }
+
+// #pragma omp for
+//       for (i = 0; i < n; i++) {
+//         diag[i] = 1.0 / diag[i];
+//       }
+//     }
+
+//     if (zite == 1) ts = get_time();
+
+// #pragma omp single
+//     {
+//       bnorm = 0.0;
+//       for (i = 0; i < n; i++) {
+//         b[i] = 1.0;  // SuiteSparse
+//         // b[i] = rand() / (double)RAND_MAX; // SuiteSparse
+//         bnorm += fabs(b[i]) * fabs(b[i]);  // SuiteSparse
+//         // bnorm += fabs(Pvec[i]) * fabs(Pvec[i]);  // JSOL
+//       }
+//     }
+
+// // TODO: set previous solution?
+// #pragma omp for
+//     for (i = 0; i < n; i++) {
+//       solx[i] = 0.0;
+//     }
+
+//     // Calc Residual
+// #pragma omp for private(ar0, j)
+//     for (i = 0; i < n; i++) {
+//       ar0 = 0.0;
+//       for (j = row_ptr[i]; j < row_ptr[i + 1]; j++) {
+//         ar0 += A[j] * solx[col_ind[j]];
+//       }
+//       r[i] = b[i] - ar0;
+//     }  // end Calc Residual
+
+// #pragma omp single
+//     {
+//       if (zite == 0) {
+//         pivot = (lapack_int *)calloc(sizeof(lapack_int), m_max);
+//       }
+//       cgrop = 0.0;
+//     }
+
+//     if (zite == 1) {
+//       // compute B^TAB
+// #pragma omp for private(j)
+//       for (i = 0; i < m_max; i++) {
+//         for (j = 0; j < n; j++) {
+//           ab[i * n + j] = 0.0;
+//         }
+//       }
+// #pragma omp for private(j, k)
+//       for (i = 0; i < m_max; i++) {
+//         for (j = 0; j < n; j++) {
+//           for (k = row_ptr[j]; k < row_ptr[j + 1]; k++) {
+//             ab[i * n + j] += A[k] * B[i * n + col_ind[k]];
+//           }
+//         }
+//       }
+// #pragma omp for private(j)
+//       for (i = 0; i < m_max; i++) {
+//         for (j = 0; j < m_max; j++) {
+//           bab[i * m_max + j] = 0.0;
+//         }
+//       }
+// #pragma omp single
+//       {
+//         cblas_dgemm(CblasColMajor, CblasTrans, CblasNoTrans, m_max, m_max, n,
+//                     1.0, B, n, ab, n, 0.0, bab, m_max);
+//         // LU decomposition
+//         LAPACKE_dgetrf(LAPACK_COL_MAJOR, m_max, m_max, bab, m_max, pivot);
+//       }
+//     }
+
+//   }  // end parallel region
+// }
