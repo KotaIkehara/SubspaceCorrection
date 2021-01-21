@@ -116,7 +116,6 @@ int main(int argc, char *argv[]) {
                &A[0], &ad[0]);
 
   free(tcol_ind);
-  // free(trow_ptr);
   free(val);
   /*--- Read JSOL Matrix ---*/
 
@@ -159,7 +158,7 @@ int main(int argc, char *argv[]) {
 
   const int K_max = 30000;
   const double err = 1.0e-6;
-  const int timestep = 10;
+  const int timestep = 2;
 
   double threshold = -atof(argv[1]);
   int m = atoi(argv[2]);
@@ -234,10 +233,6 @@ int main(int argc, char *argv[]) {
   printf("Threshold: 10^(%.1f) Thread: %d\n", threshold, procs);
 
   for (zite = 0; zite < timestep; zite++) {
-    if (zite == 0) {
-      t0 = get_time();
-    }
-
     if (zite > 0) {
       /*--- Read SuiteSparse Matrix ---*/
       // printf("matrix file path: ");
@@ -312,21 +307,10 @@ int main(int argc, char *argv[]) {
                    &col_ind[0], &A[0], &ad[0]);
 
       free(tcol_ind);
-      // free(trow_ptr);
       free(val);
       /*--- READ JSOL MATRIX ---*/
 
       diagonal_scaling(n, row_ptr, col_ind, A, ad);
-
-      // if (zite == 1) {
-      //   strcpy(mtxname, MTX_PATH + 4);
-      //   sprintf(sfile, "%s.sciccg.zite%d.theta%.1f.thread%d.dat", mtxname,
-      //   zite,
-      //           -threshold, procs);
-      //   convergenceFile = fopen(sfile, "w");
-      //   fprintf(convergenceFile, "#ite residual of %s\n", MTX_PATH);
-      //   printf("Threshold: 10^(%.1f) Thread: %d\n", threshold, procs);
-      // }
     }
 
 #pragma omp parallel private(myid, istart, iend, interd)
@@ -377,6 +361,9 @@ int main(int argc, char *argv[]) {
         }
       }
 
+      if (zite == 0) {
+        t0 = get_time();
+      }
       if (zite > 0) ts = get_time();
 
 #pragma omp single
@@ -443,6 +430,7 @@ int main(int argc, char *argv[]) {
           // LU decomposition
           LAPACKE_dgetrf(LAPACK_COL_MAJOR, m_max, m_max, bab, m_max, pivot);
         }
+        free(ab);
       }
 
     }  // end parallel region
@@ -577,9 +565,6 @@ int main(int argc, char *argv[]) {
 
       fprintf(convergenceFile, "%d %.9f\n", prev_ite + ite,
               sqrt(rnorm / bnorm));
-      // if (zite == 1) {
-      //   fprintf(convergenceFile, "%d %.9f\n", ite, sqrt(rnorm / bnorm));
-      // }
       if (sqrt(rnorm / bnorm) < err) {
         if (zite == 0) {
           t1 = get_time();
@@ -588,7 +573,7 @@ int main(int argc, char *argv[]) {
         } else {
           te = get_time();
           printf("\nite: %d\n", ite);
-          printf("\nite: %lf\n", te - ts);
+          printf("time: %lf\n", te - ts);
           total_ite += ite;
           total_time += te - ts;
         }
@@ -602,7 +587,6 @@ int main(int argc, char *argv[]) {
       /*--- end CG ---*/
       if (zite == 0) sampling(n, m, ite, lmax, solx, &h, E);
     }
-    // if (zite == 1) fclose(convergenceFile);
     /*--- end ICCG ---*/
 
     if (zite == 0) {
@@ -611,7 +595,8 @@ int main(int argc, char *argv[]) {
     }  // end if zite==0
     free(A);
     free(col_ind);
-  }
+  }  // end zite
+
   fclose(convergenceFile);
   free(trow_ptr);
 
@@ -620,7 +605,7 @@ int main(int argc, char *argv[]) {
 
   free(B);
   free(f);
-  free(ab);
+  // free(ab);
   free(bab);
   free(ad);
 
