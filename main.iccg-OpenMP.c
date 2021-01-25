@@ -218,7 +218,7 @@ int main(int argc, char *argv[]) {
 
   const int nitecg = 30000;
   const double err = 1.0e-8;
-  const double gamma = 1.05;// choke
+  const double gamma = 1.05;  // choke
   // const double gamma = 1.35;// spiral
   int ite, zite;
 
@@ -348,7 +348,7 @@ int main(int argc, char *argv[]) {
         bnorm = 0.0;
         for (i = 0; i < n; i++) {
           // b[i] = rand() / (double)RAND_MAX;
-          bnorm += fabs(Pvec[i]) * fabs(Pvec[i]); // JSOL
+          bnorm += fabs(Pvec[i]) * fabs(Pvec[i]);  // JSOL
           // bnorm += fabs(b[i]) * fabs(b[i]);//SuiteSparse
         }
       }
