@@ -128,8 +128,8 @@ int main(int argc, char *argv[]) {
   // srand(1);
 
   const int K_max = 30000;
-  const double err = 1.0e-6;
-  const int timestep = 2;
+  const double err = 1.0e-8;
+  const int timestep = 6;
 
   double threshold = -atof(argv[1]);
   int m = atoi(argv[2]);
@@ -284,6 +284,14 @@ int main(int argc, char *argv[]) {
       diagonal_scaling(n, row_ptr, col_ind, A, ad);
     }
 
+    bnorm = 0.0;
+    for (i = 0; i < n; i++) {
+      // b[i] = 1.0;  // SuiteSparse
+      // b[i] = rand() / (double)RAND_MAX; // SuiteSparse
+      // bnorm += fabs(b[i]) * fabs(b[i]);  // SuiteSparse
+      bnorm += fabs(Pvec[i]) * fabs(Pvec[i]);  // JSOL
+    }
+
 #pragma omp parallel private(myid, istart, iend, interd)
     {
 #pragma omp single
@@ -332,23 +340,6 @@ int main(int argc, char *argv[]) {
         }
       }
 
-      if (zite == 0) {
-        t0 = get_time();
-      }
-      if (zite > 0) ts = get_time();
-
-#pragma omp single
-      {
-        bnorm = 0.0;
-        for (i = 0; i < n; i++) {
-          // b[i] = 1.0;  // SuiteSparse
-          // b[i] = rand() / (double)RAND_MAX; // SuiteSparse
-          // bnorm += fabs(b[i]) * fabs(b[i]);  // SuiteSparse
-          bnorm += fabs(Pvec[i]) * fabs(Pvec[i]);  // JSOL
-        }
-      }
-
-      // TODO: set previous solution?
 #pragma omp for
       for (i = 0; i < n; i++) {
         solx[i] = 0.0;
@@ -369,7 +360,6 @@ int main(int argc, char *argv[]) {
         if (zite == 0) {
           pivot = (lapack_int *)calloc(sizeof(lapack_int), m_max);
         }
-        cgrop = 0.0;
       }
 
       if (zite == 1) {
@@ -405,6 +395,13 @@ int main(int argc, char *argv[]) {
       }
 
     }  // end parallel region
+
+    if (zite == 0) {
+      t0 = get_time();
+    }
+    if (zite > 0) ts = get_time();
+
+    cgrop = 0.0;
 
     /*--- ICCG ---*/
     for (ite = 1; ite <= K_max; ite++) {
@@ -569,7 +566,7 @@ int main(int argc, char *argv[]) {
   }  // end zite
 
   fclose(convergenceFile);
-  free(trow_ptr);
+  free(trow_ptr);  // JSOL
 
   printf("SC-ICCG ite: %lf\n", total_ite / (double)(timestep - 1));
   printf("SC-ICCG time: %lf\n\n", total_time / (double)(timestep - 1));

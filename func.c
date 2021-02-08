@@ -2,7 +2,7 @@
 
 #include <mkl.h>
 #include <omp.h>
-// ad^(-1) * A * ad(-1)
+// ad^(-1) * A * ad^(-1)
 void diagonal_scaling(const int n, const int *row_ptr, const int *col_ind,
                       double *A, double *ad) {
   int i, j, jj;
@@ -110,6 +110,7 @@ void mkbu(double *ad, double *A, int n, int *col_ind, int *row_ptr,
   return;
 }
 
+// localized IC
 int bic(int n,
         // OUT
         double *diag,
