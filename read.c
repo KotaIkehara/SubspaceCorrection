@@ -203,7 +203,6 @@ int get_jsol_mtx_info(const int n, const int *trow_ptr, const int *tcol_ind,
     for (j = trow_ptr[i]; j < trow_ptr[i + 1]; j++) {
       row = i;
       col = tcol_ind[j - 1] - 1;
-      // printf("row: %d, col: %d\n", row, col);
       if (row == col) {
         nnonzero_row[row]++;
         count++;
