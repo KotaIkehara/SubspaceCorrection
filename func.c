@@ -346,3 +346,257 @@ void constructMappingOperator(const int n, const int m, int *m_max,
     free(X2);
   }
 }
+
+double sciccg(int n, int nonzeros, int zite, double *diag, int *iuhead,
+              int *iucol, double *u, double *ad, double *A, int *col_ind,
+              int *row_ptr, double gamma, double *solx, double *r, double *b,
+              int m_max, double *bab, double *B, lapack_int *pivot) {
+  int i, j, k;
+  int myid, istart, iend, interd;
+  int numprocs, procs = omp_get_max_threads();
+  int *unnonzero;
+  double *ab;
+  unnonzero = (int *)malloc(sizeof(int) * (procs + 1));
+  ab = (double *)malloc(sizeof(double) * n * m_max);
+
+  double ar0;
+
+#pragma omp parallel private(myid, istart, iend, interd)
+  {
+#pragma omp single
+    { numprocs = omp_get_num_threads(); }
+    myid = omp_get_thread_num();
+#pragma omp barrier
+
+    interd = n / numprocs;
+    istart = interd * myid;
+    iend = interd * (myid + 1);
+    if (myid == numprocs - 1) {
+      iend = n;
+    }
+
+    if (zite == 0) {
+#pragma omp for
+      for (i = 0; i < n; i++) {
+        diag[i] = 0.0;
+      }
+#pragma omp for
+      for (i = 0; i < n + 1; i++) {
+        iuhead[i] = 0;
+      }
+#pragma omp for
+      for (i = 0; i < nonzeros; i++) {
+        iucol[i] = 0;
+        u[i] = 0.0;
+      }
+#pragma omp single
+      {
+        for (i = 0; i < procs + 1; i++) {
+          unnonzero[i] = 0;
+        }
+      }
+
+      mkbu(ad, A, n, col_ind, row_ptr, diag, u, iuhead, iucol, istart, iend,
+           myid, gamma, unnonzero, procs);
+      bic(n, diag, iuhead, iucol, u, istart, iend);
+
+#pragma omp single
+      { free(unnonzero); }
+
+#pragma omp for
+      for (i = 0; i < n; i++) {
+        diag[i] = 1.0 / diag[i];
+      }
+    }
+
+#pragma omp for
+    for (i = 0; i < n; i++) {
+      solx[i] = 0.0;
+    }
+
+    // Calc Residual
+#pragma omp for private(ar0, j)
+    for (i = 0; i < n; i++) {
+      ar0 = 0.0;
+      for (j = row_ptr[i]; j < row_ptr[i + 1]; j++) {
+        ar0 += A[j] * solx[col_ind[j]];
+      }
+      r[i] = b[i] - ar0;
+    }  // end Calc Residual
+
+    if (zite == 1) {
+      // compute B^TAB
+#pragma omp for private(j)
+      for (i = 0; i < m_max; i++) {
+        for (j = 0; j < n; j++) {
+          ab[i * n + j] = 0.0;
+        }
+      }
+#pragma omp for private(j, k)
+      for (i = 0; i < m_max; i++) {
+        for (j = 0; j < n; j++) {
+          for (k = row_ptr[j]; k < row_ptr[j + 1]; k++) {
+            ab[i * n + j] += A[k] * B[i * n + col_ind[k]];
+          }
+        }
+      }
+#pragma omp for private(j)
+      for (i = 0; i < m_max; i++) {
+        for (j = 0; j < m_max; j++) {
+          bab[i * m_max + j] = 0.0;
+        }
+      }
+#pragma omp single
+      {
+        cblas_dgemm(CblasColMajor, CblasTrans, CblasNoTrans, m_max, m_max, n,
+                    1.0, B, n, ab, n, 0.0, bab, m_max);
+
+        // LU decomposition
+        LAPACKE_dgetrf(LAPACK_COL_MAJOR, m_max, m_max, bab, m_max, pivot);
+      }
+      /*--- Deflation ---*/
+
+      /*--- end Deflation ---*/
+      free(ab);
+    }
+
+  }  // end paralell
+}
+
+void iccg(int n, int *iuhead, int *iucol, double *u, double *diag, double *z,
+          double *r, int zite, int m_max, double *f, double *B, double *bab,
+          lapack_int *pivot, double *cgrop, double *cgropp, int ite, double *p,
+          double *pn, double *q, double *A, int *row_ptr, int *col_ind,
+          double *solx, double *rnorm) {
+  int i, j, k;
+  int myid, istart, iend, interd;
+  int numprocs, procs = omp_get_max_threads();
+  double v;
+  double alpha, beta, alphat;
+  double *Bu;
+  Bu = (double *)malloc(sizeof(double) * n);
+
+#pragma omp parallel private(myid, istart, iend, interd)
+  {
+#pragma omp single
+    { numprocs = omp_get_num_threads(); }
+    myid = omp_get_thread_num();
+#pragma omp barrier
+
+    interd = n / numprocs;
+    istart = interd * myid;
+    iend = interd * (myid + 1);
+    if (myid == numprocs - 1) {
+      iend = n;
+    }
+    fbsub(iuhead, iucol, u, n, diag, z, r, istart, iend);
+
+    /*--- Subspace Correction ---*/
+    if (zite > 0) {
+      // Step1. Compute f = B^T * r
+#pragma omp for
+      for (i = 0; i < m_max; i++) {
+        f[i] = 0.0;
+      }
+      for (i = 0; i < m_max; i++) {
+        v = 0.0;
+#pragma omp for reduction(+ : v)
+        for (j = 0; j < n; j++) {
+          v += B[i * n + j] * r[j];
+        }
+        f[i] = v;
+#pragma omp barrier
+      }
+
+      // Step2. Solve (B^TAB)u = f:  forward/backward substitution
+#pragma omp single
+      {
+        LAPACKE_dgetrs(LAPACK_COL_MAJOR, 'N', m_max, 1, bab, m_max, pivot, f,
+                       m_max);
+      }
+
+      // Step3. Compute Zc = Z + Bu
+#pragma omp for
+      for (i = 0; i < n; i++) {
+        Bu[i] = 0.0;
+      }
+#pragma omp for
+      for (i = 0; i < n; i++) {
+        for (j = 0; j < m_max; j++) {
+          Bu[i] += B[j * n + i] * f[j];
+        }
+      }
+#pragma omp for
+      for (i = 0; i < n; i++) {
+        z[i] += Bu[i];
+      }
+    }
+    /*--- end Subspace Correction ---*/
+
+    /*--- CG ---*/
+#pragma omp single
+    {
+      *cgropp = *cgrop;
+      v = 0.0;
+    }
+#pragma omp for reduction(+ : v)
+    for (i = 0; i < n; i++) {
+      v += r[i] * z[i];
+    }
+#pragma omp single
+    { *cgrop = v; }
+
+    if (ite == 1) {
+#pragma omp for
+      for (i = 0; i < n; i++) {
+        pn[i] = z[i];
+      }
+    } else {
+#pragma omp single
+      { beta = *cgrop / *cgropp; }
+#pragma omp for
+      for (i = 0; i < n; i++) {
+        pn[i] = z[i] + beta * p[i];
+      }
+    }
+#pragma omp for
+    for (i = 0; i < n; i++) {
+      q[i] = 0.0;
+    }
+#pragma omp for private(j)
+    for (i = 0; i < n; i++) {
+      for (j = row_ptr[i]; j < row_ptr[i + 1]; j++) {
+        q[i] += A[j] * pn[col_ind[j]];
+      }
+    }
+#pragma omp single
+    { alphat = 0.0; }
+#pragma omp for reduction(+ : alphat)
+    for (i = 0; i < n; i++) {
+      alphat += pn[i] * q[i];
+    }
+#pragma omp single
+    { alpha = *cgrop / alphat; }
+
+#pragma omp for
+    for (i = 0; i < n; i++) {
+      solx[i] += alpha * pn[i];
+      r[i] -= alpha * q[i];
+    }
+#pragma omp for
+    for (i = 0; i < n; i++) {
+      p[i] = pn[i];
+    }
+#pragma omp single
+    { v = 0.0; }
+
+#pragma omp for reduction(+ : v)
+    for (i = 0; i < n; i++) {
+      v += fabs(r[i]) * fabs(r[i]);
+    }
+#pragma omp single
+    { *rnorm = v; }
+  }
+
+  free(Bu);
+}
